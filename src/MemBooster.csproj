@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\mem-booster.ico</ApplicationIcon>
+    <AssemblyName>Mem-Booster</AssemblyName>
+    <RootNamespace>MemBooster</RootNamespace>
+    <Version>0.4.0</Version>
+    <FileVersion>0.4.0.0</FileVersion>
+    <Product>Mem-Booster</Product>
+    <Authors>Ox1d3x3</Authors>
+    <Company>Ox1d3x3</Company>
+    <Description>Native Windows gaming process/profile booster</Description>
+    <Copyright>Copyright © Ox1d3x3</Copyright>
+    <RepositoryUrl>https://github.com/ox1d3x3</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="Profiles\*.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Resource Include="Assets\mem-booster-logo.png" />
+    <Resource Include="Assets\mem-booster.ico" />
+  </ItemGroup>
+</Project>
