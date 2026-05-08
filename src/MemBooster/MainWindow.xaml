@@ -1,0 +1,521 @@
+<Window x:Class="MemBooster.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Mem-Booster by Ox1d3x3 v0.5.19"
+        Width="1200"
+        Height="800"
+        MinWidth="1080"
+        MinHeight="700"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BackgroundBrush}"
+        FontFamily="Segoe UI Variable, Segoe UI"
+        Foreground="{DynamicResource TextBrush}">
+    <Window.Resources>
+        <SolidColorBrush x:Key="BackgroundBrush" Color="#0B0F17" />
+        <SolidColorBrush x:Key="HeaderBrush" Color="#101623" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#111827" />
+        <SolidColorBrush x:Key="CardBrush" Color="#151E2C" />
+        <SolidColorBrush x:Key="CardAltBrush" Color="#182234" />
+        <SolidColorBrush x:Key="BorderBrushSoft" Color="#253247" />
+        <SolidColorBrush x:Key="TextBrush" Color="#EEF5FF" />
+        <SolidColorBrush x:Key="TextMutedBrush" Color="#9BA8BC" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#22C55E" />
+        <SolidColorBrush x:Key="AccentBlueBrush" Color="#60A5FA" />
+        <SolidColorBrush x:Key="DangerBrush" Color="#EF4444" />
+        <SolidColorBrush x:Key="ButtonBrush" Color="#1D2738" />
+        <SolidColorBrush x:Key="ButtonHoverBrush" Color="#263449" />
+        <SolidColorBrush x:Key="InputBrush" Color="#0E1521" />
+        <SolidColorBrush x:Key="DataGridHeaderBrush" Color="#182236" />
+        <SolidColorBrush x:Key="DataGridRowBrush" Color="#101826" />
+        <SolidColorBrush x:Key="DataGridAltRowBrush" Color="#0E1521" />
+        <SolidColorBrush x:Key="DataGridGridBrush" Color="#202C3E" />
+        <SolidColorBrush x:Key="BoostButtonBrush" Color="#0F5132" />
+        <SolidColorBrush x:Key="BoostButtonBorderBrush" Color="#22C55E" />
+        <SolidColorBrush x:Key="LogoPanelBrush" Color="#0C121D" />
+
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushSoft}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="18" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+        </Style>
+
+        <Style x:Key="ModernButton" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource ButtonBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushSoft}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="13,8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource ButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BoostButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="{DynamicResource BoostButtonBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BoostButtonBorderBrush}" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="Padding" Value="18,9" />
+        </Style>
+
+        <Style x:Key="LinkButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="{DynamicResource HeaderBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushSoft}" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}" />
+            <Setter Property="Padding" Value="10,6" />
+        </Style>
+
+        <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="MinHeight" Value="26" />
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+        <Style x:Key="AppCellButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="Transparent" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource CardAltBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ThemeToggleButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource InputBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushSoft}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Height" Value="40" />
+        </Style>
+
+        <Style TargetType="ProgressBar">
+            <Setter Property="Height" Value="8" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Background" Value="{DynamicResource InputBrush}" />
+        </Style>
+
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushSoft}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="RowBackground" Value="{DynamicResource DataGridRowBrush}" />
+            <Setter Property="AlternatingRowBackground" Value="{DynamicResource DataGridAltRowBrush}" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource DataGridGridBrush}" />
+            <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource DataGridGridBrush}" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="CanUserReorderColumns" Value="False" />
+            <Setter Property="CanUserResizeRows" Value="False" />
+            <Setter Property="IsReadOnly" Value="False" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="SelectionUnit" Value="FullRow" />
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="EnableRowVirtualization" Value="True" />
+            <Setter Property="EnableColumnVirtualization" Value="True" />
+            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+        </Style>
+
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="{DynamicResource DataGridHeaderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrushSoft}" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style TargetType="DataGridRow">
+            <Setter Property="MinHeight" Value="54" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource CardAltBrush}" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource CardAltBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="DataGridCell">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DataGridGridBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="6,0" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        </Style>
+
+        <Style x:Key="GridCheckBox" TargetType="CheckBox">
+            <Setter Property="Width" Value="38" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Border x:Name="Box"
+                                    Width="30"
+                                    Height="30"
+                                    CornerRadius="9"
+                                    Background="{DynamicResource InputBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushSoft}"
+                                    BorderThickness="1" />
+                            <TextBlock x:Name="Mark"
+                                       Text="✓"
+                                       FontSize="16"
+                                       FontWeight="Bold"
+                                       Foreground="#FFFFFF"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Opacity="0" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Mark" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Box" Property="Opacity" Value="0.35" />
+                                <Setter TargetName="Mark" Property="Opacity" Value="0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="{DynamicResource HeaderBrush}" BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="1" CornerRadius="14" Padding="18,14">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="58" Height="58" CornerRadius="12" Background="{DynamicResource LogoPanelBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" Margin="0,0,16,0">
+                        <Image Source="Assets/mem-booster-logo.png" Width="50" Height="50" Stretch="Uniform" />
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
+                            <TextBlock Text="Mem-Booster" FontSize="27" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" />
+                            <TextBlock Text=" by Ox1d3x3" Foreground="{DynamicResource AccentBrush}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Bottom" Margin="6,0,0,4" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                        <TextBlock Text="v0.5.19" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" />
+                        <TextBlock Text="{Binding AdminModeText}" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Right" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <Button x:Name="RunAsAdminButton" Content="Run as Admin" Style="{StaticResource ModernButton}" Click="RunAsAdminButton_Click" IsEnabled="{Binding IsRunAsAdminButtonEnabled}" Margin="0,0,12,0" />
+
+                    <Button x:Name="ThemeToggleButton" Width="40" Height="40" Style="{StaticResource ThemeToggleButtonStyle}" Click="ThemeToggleButton_Click" Margin="0,0,10,0" ToolTip="Switch theme">
+                        <Grid>
+                            <Ellipse Fill="{DynamicResource ButtonBrush}" Stroke="{DynamicResource BorderBrushSoft}" StrokeThickness="1" />
+                            <TextBlock x:Name="ThemeToggleIcon"
+                                       Text="☾"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       RenderTransformOrigin="0.5,0.5">
+                                <TextBlock.RenderTransform>
+                                    <TransformGroup>
+                                        <ScaleTransform x:Name="ThemeIconScale" ScaleX="1" ScaleY="1" />
+                                        <RotateTransform x:Name="ThemeIconRotate" Angle="0" />
+                                    </TransformGroup>
+                                </TextBlock.RenderTransform>
+                            </TextBlock>
+                        </Grid>
+                    </Button>
+                    <Button x:Name="UpdateButton" Content="{Binding UpdateButtonText}" Style="{StaticResource LinkButton}" Click="CheckUpdatesButton_Click" Margin="0,0,8,0" ToolTip="Check GitHub releases" />
+                    <Button Content="Diagnostics" Style="{StaticResource LinkButton}" Click="CollectDiagnosticsButton_Click" Margin="0,0,8,0" ToolTip="Create a support package with logs, restore data and process list" />
+                    <Button Content="Logs" Style="{StaticResource LinkButton}" Click="OpenLogsButton_Click" Margin="0,0,8,0" ToolTip="Open the Mem-Booster logs folder" />
+                    <Button Content="GitHub" Style="{StaticResource LinkButton}" Click="OpenGithub_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="1.55*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Style="{StaticResource CardStyle}" Margin="0,0,12,0">
+                <StackPanel>
+                    <TextBlock Text="System memory" Foreground="{DynamicResource TextMutedBrush}" FontSize="13" />
+                    <TextBlock Text="{Binding MemoryText}" Foreground="{DynamicResource TextBrush}" FontSize="22" FontWeight="Bold" Margin="0,8,0,8" />
+                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding MemoryPercent}" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="0,0,12,0">
+                <StackPanel>
+                    <TextBlock Text="Running apps" Foreground="{DynamicResource TextMutedBrush}" FontSize="13" />
+                    <TextBlock Text="{Binding RunningText}" Foreground="{DynamicResource TextBrush}" FontSize="28" FontWeight="Bold" Margin="0,9,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="2" Style="{StaticResource CardStyle}" Margin="0,0,12,0">
+                <StackPanel>
+                    <TextBlock Text="Selected profile" Foreground="{DynamicResource TextMutedBrush}" FontSize="13" />
+                    <TextBlock Text="{Binding SelectedText}" Foreground="{DynamicResource TextBrush}" FontSize="20" FontWeight="Bold" Margin="0,10,0,0" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="3" Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="Profile status" Foreground="{DynamicResource TextMutedBrush}" FontSize="13" />
+                    <TextBlock Text="{Binding ProfileStatus}" Foreground="{DynamicResource TextBrush}" FontSize="15" FontWeight="SemiBold" Margin="0,10,0,0" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,16,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0" Grid.Row="0" Margin="0,0,12,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Search" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" Margin="4,0,10,0" />
+                    <TextBox x:Name="SearchBox" Grid.Column="1" TextChanged="SearchBox_TextChanged" />
+                </Grid>
+
+                <WrapPanel Grid.Column="1" Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Refresh" Style="{StaticResource ModernButton}" Margin="8,0,0,0" Click="RefreshButton_Click" />
+                    <Button Content="Save Local" Style="{StaticResource ModernButton}" Margin="8,0,0,0" Click="SaveLocalButton_Click" />
+                    <Button Content="Export XML" Style="{StaticResource ModernButton}" Margin="8,0,0,0" Click="ExportXmlButton_Click" />
+                    <Button Content="Load XML" Style="{StaticResource ModernButton}" Margin="8,0,0,0" Click="LoadXmlButton_Click" />
+                    <Button Content="BOOST NOW" Style="{StaticResource BoostButton}" Margin="12,0,0,0" Click="BoostButton_Click" />
+                </WrapPanel>
+
+                <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,10,0,0">
+                    <Button Content="Safe Select" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="SelectRecommendedButton_Click" ToolTip="Select common background apps that are usually safe to close before gaming." />
+                    <Button Content="Extreme Select" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="ExtremeSelectButton_Click" ToolTip="Select a larger known non-gaming app list." />
+                    <Button Content="Aggressive Select" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="AggressiveSelectButton_Click" ToolTip="Select most running non-gaming user apps. Review the selected list before boosting." />
+                    <Button Content="Device Optimise" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="DeviceOptimiseButton_Click" ToolTip="Choose and apply reversible Windows 11 gaming-session device settings." />
+                    <Button Content="Revert Device Optimise" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="RevertDeviceOptimiseButton_Click" IsEnabled="{Binding IsRevertDeviceOptimiseEnabled}" ToolTip="Restore the Windows settings captured by Device Optimise." />
+                    <Button Content="Preview Boost" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="PreviewButton_Click" />
+                    <Button Content="Restore Last" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="RestoreLastButton_Click" IsEnabled="{Binding IsRestoreLastEnabled}" ToolTip="Reopen apps captured during the previous boost." />
+                    <Button Content="Clear Selected" Style="{StaticResource ModernButton}" Margin="0,0,18,0" Click="ClearSelectionButton_Click" />
+                    <CheckBox x:Name="AutoRefreshCheckBox" Content="Auto-refresh" IsChecked="True" Checked="AutoRefreshCheckBox_CheckedChanged" Unchecked="AutoRefreshCheckBox_CheckedChanged" Margin="0,0,18,0" VerticalAlignment="Center" />
+                    <CheckBox x:Name="SmartCloseCheckBox" Content="Smart close first" IsChecked="True" Margin="0,0,18,0" VerticalAlignment="Center" />
+                    <TextBlock Text="Tip: click an app name to add it. Use the checkbox or the selected list to remove it." Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" FontSize="12" />
+                </WrapPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="3" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="300" />
+            </Grid.ColumnDefinitions>
+
+            <DataGrid x:Name="ProcessesGrid"
+                      ItemsSource="{Binding ProcessView}"
+                      Margin="0,0,12,0">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="Select" Width="68" IsReadOnly="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox Style="{StaticResource GridCheckBox}"
+                                          IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          IsEnabled="{Binding CanSelect}"
+                                          Tag="{Binding ExeName}"
+                                          Click="SelectionCheckBox_Click"
+                                          HorizontalAlignment="Center" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="App" Width="*" MinWidth="250" IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource AppCellButton}"
+                                        Tag="{Binding ExeName}"
+                                        Click="SelectAppNameButton_Click"
+                                        IsEnabled="{Binding CanSelect}">
+                                    <StackPanel Margin="8,5">
+                                        <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding ExeName}" Foreground="{DynamicResource TextMutedBrush}" FontSize="12" Margin="0,3,0,0" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTextColumn Header="Memory" Binding="{Binding MemoryText}" Width="115" IsReadOnly="True" />
+                    <DataGridTextColumn Header="Instances" Binding="{Binding InstanceCount}" Width="94" IsReadOnly="True" />
+
+                    <DataGridTemplateColumn Header="Status" Width="210" IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="6,5">
+                                    <TextBlock Text="{Binding RiskLabel}" Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding RiskDescription}" Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <Border Grid.Column="1" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="1" CornerRadius="12" Padding="14">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Selected apps" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Grid.Row="1" Text="{Binding SelectedText}" Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,10" FontSize="12" />
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding SelectedApps}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="1" CornerRadius="9" Padding="10" Margin="0,0,0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="×" Tag="{Binding ExeName}" Style="{StaticResource IconButton}" Click="RemoveSelectedApp_Click" Margin="8,0,0,0" ToolTip="Remove from selected profile" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="4" Background="{DynamicResource HeaderBrush}" BorderBrush="{DynamicResource BorderBrushSoft}" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="0,8,0,0" MinHeight="40">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Vertical" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextMutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0" Visibility="{Binding OperationProgressVisibility}">
+                        <ProgressBar Width="260" Height="6" Minimum="0" Maximum="100" Value="{Binding OperationProgressValue}" Margin="0,0,10,0" />
+                        <TextBlock Text="{Binding OperationProgressText}" Foreground="{DynamicResource TextBrush}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </StackPanel>
+
+                <TextBlock Grid.Column="1" Text="{Binding OperationElapsedText}" Foreground="{DynamicResource AccentBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

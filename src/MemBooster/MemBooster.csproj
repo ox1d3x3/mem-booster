@@ -9,14 +9,16 @@
     <ApplicationIcon>Assets\mem-booster.ico</ApplicationIcon>
     <AssemblyName>Mem-Booster</AssemblyName>
     <RootNamespace>MemBooster</RootNamespace>
-    <Version>0.4.0</Version>
-    <FileVersion>0.4.0.0</FileVersion>
+    <Version>0.5.19</Version>
+    <FileVersion>0.5.19.0</FileVersion>
     <Product>Mem-Booster</Product>
     <Authors>Ox1d3x3</Authors>
     <Company>Ox1d3x3</Company>
-    <Description>Native Windows gaming process/profile booster</Description>
+    <Description>Native Windows process/profile booster</Description>
+    <StartupObject>MemBooster.App</StartupObject>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <Copyright>Copyright © Ox1d3x3</Copyright>
-    <RepositoryUrl>https://github.com/ox1d3x3</RepositoryUrl>
+    <RepositoryUrl>https://github.com/ox1d3x3/mem-booster</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>

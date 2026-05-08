@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MemBoosterProfile version="0.5.19" name="Gaming Boost" author="Ox1d3x3" github="https://github.com/ox1d3x3/mem-booster">
+  <Processes>
+    <Process executable="msedge.exe" />
+    <Process executable="chrome.exe" />
+    <Process executable="brave.exe" />
+    <Process executable="firefox.exe" />
+    <Process executable="WINWORD.exe" />
+    <Process executable="EXCEL.exe" />
+    <Process executable="POWERPNT.exe" />
+    <Process executable="OUTLOOK.exe" />
+    <Process executable="Teams.exe" />
+    <Process executable="OneDrive.exe" />
+    <Process executable="WidgetBoard.exe" />
+    <Process executable="WidgetService.exe" />
+    <Process executable="MicrosoftStartFeedProvider.exe" />
+    <Process executable="PhoneExperienceHost.exe" />
+    <Process executable="YourPhone.exe" />
+    <Process executable="Spotify.exe" />
+    <Process executable="Dropbox.exe" />
+    <Process executable="GoogleDriveFS.exe" />
+  </Processes>
+</MemBoosterProfile>

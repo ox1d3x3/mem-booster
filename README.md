@@ -1,97 +1,107 @@
-# Mem-Booster v0.4 - native Windows build
+# Mem-Booster by Ox1d3x3 v0.5.19
 
-Mem-Booster is a native Windows .NET WPF app for creating a repeatable gaming boost profile. Tick the apps you want to close, save the list locally, export it as XML, or load a profile shared by someone else.
+Native Windows WPF app for quickly preparing Windows for gaming by closing selected background apps and restoring them later where possible.
 
-Built for: **Ox1d3x3**  
-GitHub: **https://github.com/ox1d3x3**
+## Highlights
 
-## What changed in v0.4
+- Fast native .NET 8 WPF interface
+- Live RAM usage and process list
+- Checkbox/app-name selection plus selected-apps panel
+- Local profiles and shareable XML profiles
+- Safe Select, Extreme Select and Aggressive Select
+- Smart close first, then force-kill process trees
+- Restore Last to reopen apps captured during the previous boost
+- Device Optimise / Revert Device Optimise for reversible Windows 11 gaming-session settings
+- Dark/light theme toggle
+- GitHub update check: https://github.com/ox1d3x3/mem-booster
+- Detailed logs and performance timings for troubleshooting
 
-- Added branded app logo and Windows `.ico` icon.
-- Added Ox1d3x3 branding and GitHub link in the UI.
-- Added **Select Safe Gaming Apps** for common safe targets like browsers, Widgets, Teams, Game Bar helpers and Xbox background apps.
-- Added **Preview Boost** so you can see exactly what will be closed before pressing BOOST.
-- Added **Clear Selected**.
-- Added **Auto-refresh process list** toggle so the grid does not fight you while selecting apps.
-- Added **Smart close first, then force-kill** option.
-- Added boost logging to `%APPDATA%\Mem-Booster\logs\boost.log`.
-- Improved XML profile save/load and blocked Windows core processes from being saved.
-- Improved process-tree close logic and missing-profile-entry reporting.
+## Selection modes
 
-## Why this version should feel faster
+- Safe Select: conservative list of common background apps.
+- Extreme Select: larger known non-gaming cleanup list.
+- Aggressive Select: stronger gaming-session cleanup for browsers, Office/M365, widgets, PC Manager, Windows feed/search/index helpers, cloud sync tools, dev tools, media apps, PowerToys, Command Palette helpers and download managers.
 
-- Native WPF UI instead of Python GUI wrappers.
-- No Python runtime.
-- Process list is grouped by executable name, so you do not scroll through hundreds of duplicate helper processes.
-- Memory refresh runs separately from the process list refresh.
-- Virtualised DataGrid for smoother scrolling.
-- Native Windows ToolHelp process snapshot for tree-level process termination.
-- XML profile export/import for sharing boost profiles.
+Aggressive Select still excludes core Windows processes, game launchers, anti-cheat, GPU driver/control processes, Discord/voice/streaming tools, VPN/firewall/security tools, RGB/fan/driver-tuning tools, MSI Afterburner and RivaTuner. Review the selected-apps panel before pressing BOOST NOW.
 
-## Main features
+## Logs
 
-- Real-time system memory display.
-- Tick apps and save your local profile.
-- Export selected apps to a shareable XML file.
-- Load XML profiles from friends.
-- Smart skip behaviour: if a profile entry is not running on this PC, Mem-Booster skips it instead of failing.
-- Preview mode showing active matches and estimated memory used by matched apps.
-- Tree-level boost: closes selected process names and their child/helper processes.
-- Built-in safety rules to hide/block core Windows processes.
+Mem-Booster writes detailed logs here:
 
-## Build in Visual Studio
-
-1. Extract the ZIP.
-2. Open `MemBooster.sln` in Visual Studio 2022.
-3. Make sure the `.NET desktop development` workload is installed.
-4. Select `Release`.
-5. Press **Build > Build Solution**.
-6. Run the app from Visual Studio or publish it.
-
-## Build as a single EXE
-
-Open PowerShell or CMD in this folder and run:
-
-```bat
-publish-win-x64.bat
+```text
+%APPDATA%\Mem-Booster\logs
 ```
 
-The output will be here:
+Useful files:
+
+```text
+mem-booster.log       Main activity log
+performance.log       Operation timings
+boost.log             Boost/restore results
+device-optimise.log   Device Optimise/Revert details
+snapshots\*.csv       Before/after process snapshots
+startup.log           Startup crash log
+```
+
+Use the **Logs** button in the app or run:
+
+```bat
+open-logs.bat
+```
+
+## Restore Last
+
+Before boosting, Mem-Booster captures restorable executable paths for selected running apps. After boosting, Restore Last reopens those apps where possible and skips apps already running. It is best-effort and will not restore unsaved documents, exact window positions, browser tabs, every UWP app state, or protected service state.
+
+## Build
+
+Open `MemBooster.sln` in Visual Studio 2022 with the .NET desktop development workload installed.
+
+Or publish a self-contained x64 build:
+
+```bat
+clean-publish-win-x64.bat
+```
+
+Output:
 
 ```text
 src\MemBooster\bin\Release\net8.0-windows10.0.17763.0\win-x64\publish\Mem-Booster.exe
 ```
 
-This build is self-contained, so it does not require the .NET runtime to be installed on the target PC.
+## Diagnostics
 
-For a smaller EXE that requires the .NET 8 Desktop Runtime, run:
+Use the **Diagnostics** button inside the app, or run:
 
 ```bat
-build-framework-dependent.bat
+collect-diagnostics.bat
 ```
 
-## XML profile format
+It creates a ZIP on your Desktop containing logs, boost/restore history, process snapshots, restore session, local profile, settings, and current process list. Share that ZIP when reporting issues.
 
-Example:
+## v0.5.19 reliability notes
 
-```xml
-<MemBoosterProfile version="0.4" name="Gaming Boost" author="Ox1d3x3" github="https://github.com/ox1d3x3">
-  <Processes>
-    <Process executable="msedge.exe" />
-    <Process executable="WidgetBoard.exe" />
-    <Process executable="GameBar.exe" />
-  </Processes>
-</MemBoosterProfile>
-```
+- Aggressive Select no longer auto-selects unknown process names. Unknown apps stay manually selectable, but Aggressive mode is now deterministic and safer.
+- Existing local/XML profiles are sanitised on load so old unsafe entries such as Windows service processes, VM service helpers, OOBE broker and temporary helper processes are dropped automatically.
+- Save Local and Export XML skip temporary/unsafe profile entries so old aggressive selections do not keep coming back.
+- Monitoring/LCD tools such as HWiNFO, TrafficMonitor, TRCC, USBLCD and USBLCDNEW are no longer selected by Aggressive mode. They remain manual review items.
+- Restore Last is more conservative and no longer attempts to relaunch service/helper processes such as SearchIndexer, SearchProtocolHost, sqlwriter, VMware services or Windows OOBE broker.
+- Successful Boost/Restore now reports in the status bar instead of forcing an extra completion pop-up, which keeps the workflow smoother and makes operation timing logs more accurate.
+- Logs are rotated at 5 MB so long test sessions do not create oversized log files.
 
-A sample profile is included at:
+## Device Optimise
 
-```text
-src\MemBooster\Profiles\gaming-example.xml
-```
+Device Optimise is Windows 11 focused and requires administrator mode for the full workflow. The button opens a selectable optimisation list with a 15-second review timer. Recommended safe options are selected by default, while advanced/restart-required options are clearly marked.
 
-## Important gaming advice
+Recommended reversible options include Ultimate Performance power plan, Windows Game Mode, Xbox/Game DVR capture/background recording disabled, transparency/animation effects reduced, Widgets taskbar button hidden, and Windows Search indexing paused if it was running.
 
-Do not blindly close Steam, EA App, Riot Client, Battle.net, anti-cheat, fan-control, RGB-control, audio-control, AMD/NVIDIA driver components, or overlay tools if your game depends on them.
+Optional advanced options include enhanced pointer precision off, multimedia scheduler Games profile values, and hardware-accelerated GPU scheduling. These are still captured and reversible, but they are not selected by default because they can change input feel, audio/network scheduling behaviour, or require a restart.
 
-For your screenshot, safer targets are usually Edge, Widgets, Microsoft Start Feed, Xbox background apps and other optional background apps. Be more careful with Steam and AMD software.
+Revert Device Optimise restores the captured power plan, registry values and Windows Search state. Mem-Booster intentionally does not disable antivirus/security, Memory Integrity/VBS, HPET, GPU drivers, network adapters, VPN/firewall tools, game launchers, anti-cheat, Discord, MSI Afterburner or RivaTuner.
+
+## v0.5.19 notes
+
+- Device Optimise now opens a selectable optimisation list instead of applying a fixed set.
+- Recommended items are selected by default; advanced/restart-required items are opt-in.
+- Revert Device Optimise lists the captured options before reverting.
+- Device Optimise uses reversible settings only and stores the baseline in `%APPDATA%\Mem-Booster\device-optimise-state.xml`.
