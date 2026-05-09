@@ -1,4 +1,4 @@
-# Mem-Booster by Ox1d3x3 v0.5.24
+# Mem-Booster by Ox1d3x3 v0.5.25
 
 Native Windows 11 WPF app for preparing a gaming session by closing selected non-gaming background apps, applying optional reversible Windows 11 gaming-session settings, and keeping clear logs for troubleshooting.
 
@@ -75,7 +75,7 @@ collect-diagnostics.bat
 
 It creates a ZIP on your Desktop containing logs, process snapshots, local profile, settings, and current process list. Share that ZIP when reporting issues.
 
-## v0.5.24 notes
+## v0.5.25 notes
 
 - Restore Last was removed from the UI because diagnostics showed app relaunch is not reliable enough for a professional workflow.
 - Boost no longer captures or writes restore sessions.
