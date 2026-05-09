@@ -18,7 +18,7 @@ public sealed class UpdateService
     public async Task<UpdateCheckResult> CheckLatestAsync(string currentVersion, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApiUrl);
-        request.Headers.UserAgent.ParseAdd("Mem-Booster/0.5.22");
+        request.Headers.UserAgent.ParseAdd("Mem-Booster/0.5.24");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
 
         using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);

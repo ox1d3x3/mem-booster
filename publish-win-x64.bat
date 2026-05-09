@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 
-echo Building Mem-Booster v0.5.22 native Windows EXE...
+echo Building Mem-Booster v0.5.24 native Windows EXE...
 dotnet --version
 if errorlevel 1 (
   echo.

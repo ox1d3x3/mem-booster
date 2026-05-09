@@ -45,7 +45,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly bool _isAdministrator;
     private string _adminModeText = "Standard mode";
     private bool _isRunAsAdminButtonEnabled = true;
-    private const string CurrentVersion = "0.5.22";
+    private const string CurrentVersion = "0.5.24";
     private string _currentTheme = "Dark";
     private string _updateButtonText = "Updates";
     private bool _checkingForUpdates;
@@ -327,13 +327,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var sunGeometry = "M10,3 A7,7 0 1 1 10,17 A7,7 0 1 1 10,3 M10,0.5 L10,2.3 M10,17.7 L10,19.5 M0.5,10 L2.3,10 M17.7,10 L19.5,10 M3.1,3.1 L4.4,4.4 M15.6,15.6 L16.9,16.9 M16.9,3.1 L15.6,4.4 M4.4,15.6 L3.1,16.9";
-        var moonGeometry = "M18,13.5 C16.4,15.4 14,16.6 11.3,16.6 C6.4,16.6 2.4,12.6 2.4,7.7 C2.4,5.1 3.5,2.7 5.3,1 C5.1,1.8 5,2.6 5,3.4 C5,8.4 9,12.4 14,12.4 C15.4,12.4 16.8,12.1 18,11.4 C18.2,12.1 18.2,12.8 18,13.5 Z";
+        var sunGeometry = "M10,3.2 A6.8,6.8 0 1 1 10,16.8 A6.8,6.8 0 1 1 10,3.2 M10,0.9 L10,2.4 M10,17.6 L10,19.1 M0.9,10 L2.4,10 M17.6,10 L19.1,10 M3.5,3.5 L4.6,4.6 M15.4,15.4 L16.5,16.5 M16.5,3.5 L15.4,4.6 M4.6,15.4 L3.5,16.5";
+        var moonGeometry = "M14.9,2.2 C12.8,2.5 10.9,3.6 9.6,5.3 C8.2,7.1 7.6,9.4 7.9,11.6 C8.6,16 12.5,19.1 16.9,18.8 C14.8,20.1 12.2,20.6 9.7,20 C5.8,19 2.7,15.7 1.9,11.8 C0.9,7 3.5,2.1 8,0.5 C10.5,-0.4 13.1,0 14.9,2.2 Z";
 
         ThemeIconPath.Data = Geometry.Parse(light ? sunGeometry : moonGeometry);
         ThemeIconPath.Fill = light ? Brushes.Transparent : (Brush)Resources["AccentBrush"];
         ThemeIconPath.Stroke = (Brush)Resources["AccentBrush"];
-        ThemeIconPath.StrokeThickness = light ? 1.8 : 1.6;
+        ThemeIconPath.StrokeThickness = light ? 1.35 : 1.25;
         ThemeToggleButton.ToolTip = light ? "Switch to dark theme" : "Switch to light theme";
 
         if (!animate)
@@ -345,7 +345,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             if (ThemeIconRotate is not null)
             {
-                ThemeIconRotate.Angle = light ? 0 : -18;
+                ThemeIconRotate.Angle = light ? 0 : -12;
             }
             return;
         }
@@ -545,7 +545,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task RefreshProcessesAsync(bool force = false, bool showProgress = false, string? progressContext = null)
     {
-        if (_refreshRunning && !force)
+        if (_refreshRunning)
         {
             return;
         }
@@ -618,7 +618,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             RunningText = ProcessGroups.Count.ToString();
             UpdateSelectionSummary();
-            _processView.Refresh();
+            EndGridEditTransaction();
+            SafeRefreshProcessView();
             refreshWatch.Stop();
             StatusText = $"Updated {DateTime.Now:T} in {refreshWatch.ElapsedMilliseconds} ms";
             if (showProgress)
@@ -1291,13 +1292,114 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
+    private void SafeRefreshProcessView()
+    {
+        if (_processView is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_processView is System.ComponentModel.IEditableCollectionView editableView)
+            {
+                if (editableView.IsEditingItem)
+                {
+                    editableView.CommitEdit();
+                }
+
+                if (editableView.IsAddingNew)
+                {
+                    editableView.CommitNew();
+                }
+            }
+        }
+        catch
+        {
+            try
+            {
+                if (_processView is System.ComponentModel.IEditableCollectionView editableView)
+                {
+                    if (editableView.IsEditingItem)
+                    {
+                        editableView.CancelEdit();
+                    }
+
+                    if (editableView.IsAddingNew)
+                    {
+                        editableView.CancelNew();
+                    }
+                }
+            }
+            catch
+            {
+                // Collection view cleanup must never block refresh.
+            }
+        }
+
+        _processView.Refresh();
+    }
+
+
+    private void EndGridEditTransaction()
+    {
+        try
+        {
+            ProcessesGrid.CommitEdit(DataGridEditingUnit.Cell, true);
+            ProcessesGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        }
+        catch
+        {
+            try
+            {
+                ProcessesGrid.CancelEdit(DataGridEditingUnit.Cell);
+                ProcessesGrid.CancelEdit(DataGridEditingUnit.Row);
+            }
+            catch
+            {
+                // Grid edit cleanup must never block refresh or selection.
+            }
+        }
+    }
+
     private void SelectionCheckBox_Click(object sender, RoutedEventArgs e)
     {
+        SuppressRowToggle();
         e.Handled = true;
-        if (sender is CheckBox checkBox && checkBox.Tag is string exeName)
+
+        if (sender is not CheckBox checkBox || checkBox.Tag is not string exeName || string.IsNullOrWhiteSpace(exeName))
         {
-            _loggerService.Write($"Selection checkbox clicked: exe={exeName}; checked={checkBox.IsChecked}");
+            return;
         }
+
+        EndGridEditTransaction();
+
+        if (_busyOperation)
+        {
+            checkBox.IsChecked = ProcessGroups.FirstOrDefault(p => p.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase))?.IsSelected ?? false;
+            StatusText = "Please wait for the current operation to finish.";
+            return;
+        }
+
+        var process = ProcessGroups.FirstOrDefault(p => p.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase));
+        if (process is null)
+        {
+            checkBox.IsChecked = false;
+            StatusText = "That app is no longer running. Refresh the list and try again.";
+            return;
+        }
+
+        if (!process.CanSelect)
+        {
+            checkBox.IsChecked = false;
+            StatusText = $"{process.DisplayName} is protected and cannot be selected.";
+            return;
+        }
+
+        var requestedState = checkBox.IsChecked == true;
+        process.IsSelected = requestedState;
+        checkBox.IsChecked = process.IsSelected;
+        _loggerService.Write($"Selection checkbox clicked: exe={exeName}; selected={process.IsSelected}");
     }
 
     private void SelectAppNameButton_Click(object sender, RoutedEventArgs e)
@@ -1381,7 +1483,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
         _searchText = SearchBox.Text.Trim();
-        _processView.Refresh();
+        SafeRefreshProcessView();
         _loggerService.Write($"Search filter changed: length={_searchText.Length}");
     }
 

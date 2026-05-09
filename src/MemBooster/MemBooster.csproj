@@ -9,8 +9,8 @@
     <ApplicationIcon>Assets\mem-booster.ico</ApplicationIcon>
     <AssemblyName>Mem-Booster</AssemblyName>
     <RootNamespace>MemBooster</RootNamespace>
-    <Version>0.5.22</Version>
-    <FileVersion>0.5.22.0</FileVersion>
+    <Version>0.5.24</Version>
+    <FileVersion>0.5.24.0</FileVersion>
     <Product>Mem-Booster</Product>
     <Authors>Ox1d3x3</Authors>
     <Company>Ox1d3x3</Company>
