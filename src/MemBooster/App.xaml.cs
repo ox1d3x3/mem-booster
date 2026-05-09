@@ -8,7 +8,7 @@ namespace MemBooster;
 public partial class App : Application
 {
     private const long MaxStartupLogBytes = 1024L * 1024L;
-    private const string AppVersion = "0.5.25";
+    private const string AppVersion = "0.5.26";
 
     public static string AppDataDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

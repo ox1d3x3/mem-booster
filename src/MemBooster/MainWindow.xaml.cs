@@ -45,7 +45,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly bool _isAdministrator;
     private string _adminModeText = "Standard mode";
     private bool _isRunAsAdminButtonEnabled = true;
-    private const string CurrentVersion = "0.5.25";
+    private const string CurrentVersion = "0.5.26";
     private string _currentTheme = "Dark";
     private string _updateButtonText = "Updates";
     private bool _checkingForUpdates;
@@ -552,7 +552,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _refreshRunning = true;
         var refreshWatch = Stopwatch.StartNew();
-        using var operation = _loggerService.BeginOperation("RefreshProcesses", $"force={force}; selected={_selectedProcessNames.Count}; progress={showProgress}; context={progressContext ?? "auto"}");
+        var context = progressContext ?? "auto";
+        var isAutoRefresh = !force && !showProgress && string.Equals(context, "auto", StringComparison.OrdinalIgnoreCase);
+        LogOperationScope? operation = null;
+
+        if (!isAutoRefresh)
+        {
+            operation = _loggerService.BeginOperation("RefreshProcesses", $"force={force}; selected={_selectedProcessNames.Count}; progress={showProgress}; context={context}");
+        }
+
         StatusText = "Refreshing running apps...";
         if (showProgress)
         {
@@ -573,7 +581,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 UpdateOperationProgress("Reading process snapshot...", 25);
             }
 
-            var snapshots = await Task.Run(() => _processService.GetProcessGroups(message => operation.Checkpoint(message)));
+            var snapshots = await Task.Run(() => _processService.GetProcessGroups(message => operation?.Checkpoint(message)));
 
             if (showProgress)
             {
@@ -626,15 +634,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 UpdateOperationProgress($"Loaded {ProcessGroups.Count} app groups in {refreshWatch.ElapsedMilliseconds} ms", 100);
             }
-            operation.Checkpoint($"Refresh UI updated: visibleGroups={ProcessGroups.Count}; selected={_selectedProcessNames.Count}; elapsedMs={refreshWatch.ElapsedMilliseconds}");
+
+            operation?.Checkpoint($"Refresh UI updated: visibleGroups={ProcessGroups.Count}; selected={_selectedProcessNames.Count}; elapsedMs={refreshWatch.ElapsedMilliseconds}");
+            if (isAutoRefresh && refreshWatch.ElapsedMilliseconds >= 100)
+            {
+                _loggerService.WritePerformance($"auto-refresh slow; elapsedMs={refreshWatch.ElapsedMilliseconds}; groups={ProcessGroups.Count}; selected={_selectedProcessNames.Count}");
+            }
         }
         catch (Exception ex)
         {
             StatusText = $"Refresh failed: {ex.Message}";
             _loggerService.Write($"Refresh failed: {ex}");
+            if (isAutoRefresh)
+            {
+                _loggerService.WritePerformance($"auto-refresh failed; elapsedMs={refreshWatch.ElapsedMilliseconds}; error={ex.Message}");
+            }
         }
         finally
         {
+            operation?.Dispose();
             _refreshRunning = false;
             if (showProgress && !string.Equals(progressContext, "Initial load", StringComparison.OrdinalIgnoreCase) && !_busyOperation)
             {
@@ -643,79 +661,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private bool FilterProcess(object item)
-    {
-        if (item is not ProcessGroup process)
-        {
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(_searchText))
-        {
-            return true;
-        }
-
-        return process.DisplayName.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
-            || process.ExeName.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
-            || process.RiskLabel.Contains(_searchText, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private void ProcessGroup_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (_syncingSelection || sender is not ProcessGroup process || e.PropertyName != nameof(ProcessGroup.IsSelected))
-        {
-            return;
-        }
-
-        if (process.IsSelected)
-        {
-            _selectedProcessNames.Add(process.ExeName);
-            _loggerService.Write($"Selection changed: {process.DisplayName} | {process.ExeName} | selected=True");
-            StatusText = $"Selected {process.DisplayName}.";
-        }
-        else
-        {
-            _selectedProcessNames.Remove(process.ExeName);
-            _loggerService.Write($"Selection changed: {process.DisplayName} | {process.ExeName} | selected=False");
-            StatusText = $"Removed {process.DisplayName}.";
-        }
-
-        UpdateSelectionSummary();
-    }
-
-    private void UpdateSelectionSummary()
-    {
-        var activeMatches = ProcessGroups.Count(p => p.IsSelected);
-        SelectedText = $"{activeMatches} active / {_selectedProcessNames.Count} profile";
-
-        SelectedApps.Clear();
-        foreach (var exeName in _selectedProcessNames.OrderBy(GetSelectedDisplayName, StringComparer.OrdinalIgnoreCase))
-        {
-            var running = ProcessGroups.FirstOrDefault(p => p.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase));
-            var displayName = running?.DisplayName ?? ToFriendlyFallbackName(exeName);
-            var state = running is null
-                ? "Not running"
-                : $"{running.ExeName} • {running.MemoryText}";
-
-            SelectedApps.Add(new SelectedAppItem(displayName, exeName, state));
-        }
-    }
-
-    private string GetSelectedDisplayName(string exeName)
-    {
-        return ProcessGroups.FirstOrDefault(p => p.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase))?.DisplayName
-            ?? ToFriendlyFallbackName(exeName);
-    }
-
-    private static string ToFriendlyFallbackName(string exeName)
-    {
-        var name = exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? exeName[..^4]
-            : exeName;
-
-        return string.Join(" ", name.Replace('_', ' ').Replace('-', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Select(part => part.Length <= 1 ? part.ToUpperInvariant() : char.ToUpperInvariant(part[0]) + part[1..]));
-    }
 
     private void UpdateMemoryInfo()
     {
@@ -1223,21 +1168,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var activeMatches = ProcessGroups.Count(p => p.IsSelected);
         var activeMemory = FormatBytes(ProcessGroups.Where(p => p.IsSelected).Sum(p => p.WorkingSetBytes));
-        _loggerService.Write($"Boost confirmation shown; selected={_selectedProcessNames.Count}; activeMatches={activeMatches}; activeMemory={activeMemory}; admin={_isAdministrator}");
+        var fastBoost = FastBoostCheckBox.IsChecked == true;
+        var smartClose = !fastBoost && SmartCloseCheckBox.IsChecked == true;
+        var resumeTimerAfterWarning = AutoRefreshCheckBox.IsChecked == true && _processTimer.IsEnabled;
+        _processTimer.Stop();
+        _loggerService.Write($"Boost confirmation shown; selected={_selectedProcessNames.Count}; activeMatches={activeMatches}; activeMemory={activeMemory}; admin={_isAdministrator}; fastBoost={fastBoost}; smartClose={smartClose}");
         var confirm = ShowTimedWarning(
             "⚠ Boost Now Warning",
-            $"Warning: Mem-Booster will close the selected apps and their child/helper processes. This can close unsaved work and may temporarily break some Windows/app functionality.\n\nProfile entries: {_selectedProcessNames.Count}\nRunning matches: {activeMatches}\nEstimated RAM in matched apps: {activeMemory}\nSmart close first: {(SmartCloseCheckBox.IsChecked == true ? "On" : "Off")}\n\nMem-Booster will not try to reopen apps automatically. Restart Windows after a heavy boost if you want everything back to the normal background-app state. Use Revert Device Optimise if you changed Windows settings.",
+            $"Warning: Mem-Booster will close the selected apps and their child/helper processes. This can close unsaved work and may temporarily break some Windows/app functionality.\n\nProfile entries: {_selectedProcessNames.Count}\nRunning matches: {activeMatches}\nEstimated RAM in matched apps: {activeMemory}\nSmart close first: {(smartClose ? "On" : "Off")}\nFast boost: {(fastBoost ? "On" : "Off")}\n\nMem-Booster will not try to reopen apps automatically. Restart Windows after a heavy boost if you want everything back to the normal background-app state. Use Revert Device Optimise if you changed Windows settings.",
             "Start Boost",
             5);
 
         if (!confirm)
         {
             StatusText = "Boost cancelled.";
+            if (resumeTimerAfterWarning)
+            {
+                _processTimer.Start();
+            }
             return;
         }
 
-        _processTimer.Stop();
-        using var operation = _loggerService.BeginOperation("BoostNow", $"selected={_selectedProcessNames.Count}; activeMatches={activeMatches}; admin={_isAdministrator}");
+        using var operation = _loggerService.BeginOperation("BoostNow", $"selected={_selectedProcessNames.Count}; activeMatches={activeMatches}; admin={_isAdministrator}; fastBoost={fastBoost}; smartClose={smartClose}");
         SetBusyState(true, "Boost running... closing selected process trees.");
         ShowOperationProgress("Preparing boost...", 5);
 
@@ -1246,7 +1198,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _loggerService.WriteProcessSnapshot("before-boost", ProcessGroups, _selectedProcessNames);
             UpdateOperationProgress("Snapshot saved. Closing selected processes...", 24);
             operation.Checkpoint("Before-boost snapshot saved");
-            var options = new TerminationOptions(SmartCloseCheckBox.IsChecked == true, 750, 1200);
+            var options = new TerminationOptions(smartClose, fastBoost ? 0 : 750, fastBoost ? 800 : 1200);
             var selectedCsv = string.Join(", ", _selectedProcessNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
 
             var result = await Task.Run(() => _processService.KillProcessTreesByExecutableNames(_selectedProcessNames, options, message => operation.Checkpoint(message)));

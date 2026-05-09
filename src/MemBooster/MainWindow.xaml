@@ -1,7 +1,7 @@
 <Window x:Class="MemBooster.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Mem-Booster by Ox1d3x3 v0.5.25"
+        Title="Mem-Booster by Ox1d3x3 v0.5.26"
         Width="1200"
         Height="800"
         MinWidth="1080"
@@ -305,7 +305,7 @@
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                        <TextBlock Text="v0.5.25" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" />
+                        <TextBlock Text="v0.5.26" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" />
                         <TextBlock Text="{Binding AdminModeText}" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Right" Margin="0,3,0,0" />
                     </StackPanel>
                     <Button x:Name="RunAsAdminButton" Content="Run as Admin" Style="{StaticResource ModernButton}" Click="RunAsAdminButton_Click" IsEnabled="{Binding IsRunAsAdminButtonEnabled}" Margin="0,0,12,0" />
@@ -420,7 +420,8 @@
                     <Button Content="Preview Boost" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="PreviewButton_Click" />
                     <Button Content="Clear Selected" Style="{StaticResource ModernButton}" Margin="0,0,18,0" Click="ClearSelectionButton_Click" />
                     <CheckBox x:Name="AutoRefreshCheckBox" Content="Auto-refresh" IsChecked="True" Checked="AutoRefreshCheckBox_CheckedChanged" Unchecked="AutoRefreshCheckBox_CheckedChanged" Margin="0,0,18,0" VerticalAlignment="Center" />
-                    <CheckBox x:Name="SmartCloseCheckBox" Content="Smart close first" IsChecked="True" Margin="0,0,18,0" VerticalAlignment="Center" />
+                    <CheckBox x:Name="SmartCloseCheckBox" Content="Smart close first" IsChecked="True" Margin="0,0,18,0" VerticalAlignment="Center" ToolTip="Try to close normal windows before force-killing them." />
+                    <CheckBox x:Name="FastBoostCheckBox" Content="Fast boost" IsChecked="False" Margin="0,0,18,0" VerticalAlignment="Center" ToolTip="Skip graceful close and force-close selected apps faster. Use only after saving your work." />
                     <TextBlock Text="Tip: Boost closes selected apps for the current session. Restart Windows to return to the normal background-app state. Use Revert Device Optimise only for Windows setting changes." Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap" MaxWidth="520" />
                 </WrapPanel>
             </Grid>
