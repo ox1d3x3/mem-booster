@@ -1,6 +1,6 @@
-# Mem-Booster by Ox1d3x3 v0.5.20
+# Mem-Booster by Ox1d3x3 v0.5.21
 
-Native Windows WPF app for quickly preparing Windows for gaming by closing selected background apps and restoring them later where possible.
+Native Windows 11 WPF app for preparing a gaming session by closing selected non-gaming background apps, applying optional reversible Windows 11 gaming-session settings, and keeping clear logs for troubleshooting.
 
 ## Highlights
 
@@ -10,9 +10,9 @@ Native Windows WPF app for quickly preparing Windows for gaming by closing selec
 - Local profiles and shareable XML profiles
 - Safe Select, Extreme Select and Aggressive Select
 - Smart close first, then force-kill process trees
-- Restore Last to reopen apps captured during the previous boost
 - Device Optimise / Revert Device Optimise for reversible Windows 11 gaming-session settings
-- Dark/light theme toggle
+- Restart guidance after Boost instead of unreliable app relaunch attempts
+- Modern dark/light theme toggle
 - GitHub update check: https://github.com/ox1d3x3/mem-booster
 - Detailed logs and performance timings for troubleshooting
 
@@ -23,6 +23,22 @@ Native Windows WPF app for quickly preparing Windows for gaming by closing selec
 - Aggressive Select: stronger gaming-session cleanup for browsers, Office/M365, widgets, PC Manager, Windows feed/search/index helpers, cloud sync tools, dev tools, media apps, PowerToys, Command Palette helpers and download managers.
 
 Aggressive Select still excludes core Windows processes, game launchers, anti-cheat, GPU driver/control processes, Discord/voice/streaming tools, VPN/firewall/security tools, RGB/fan/driver-tuning tools, MSI Afterburner and RivaTuner. Review the selected-apps panel before pressing BOOST NOW.
+
+## Boost behaviour
+
+Mem-Booster closes selected app process trees. It does not try to reopen apps automatically because packaged apps, helper processes, UWP apps, browsers and background services do not restore reliably enough.
+
+After a heavy boost, restart Windows to return to the normal background-app state. If you used Device Optimise, use Revert Device Optimise first, then restart if needed.
+
+## Device Optimise
+
+Device Optimise is Windows 11 focused and requires administrator mode for the full workflow. The button opens a selectable optimisation list with a 15-second review timer. Recommended safe options are selected by default, while advanced/restart-required options are clearly marked.
+
+Recommended reversible options include Ultimate Performance power plan, Windows Game Mode, Xbox/Game DVR capture/background recording disabled, transparency/animation effects reduced, Widgets taskbar button hidden, and Windows Search indexing paused if it was running.
+
+Optional advanced options include enhanced pointer precision off, multimedia scheduler Games profile values, and hardware-accelerated GPU scheduling. These are captured and reversible where supported, but they are not selected by default because they can change input feel, audio/network scheduling behaviour, or require a restart.
+
+Revert Device Optimise restores the captured power plan, registry values and Windows Search state. Mem-Booster intentionally does not disable antivirus/security, Memory Integrity/VBS, HPET, GPU drivers, network adapters, VPN/firewall tools, game launchers, anti-cheat, Discord, MSI Afterburner or RivaTuner.
 
 ## Logs
 
@@ -37,7 +53,7 @@ Useful files:
 ```text
 mem-booster.log       Main activity log
 performance.log       Operation timings
-boost.log             Boost/restore results
+boost.log             Boost results
 device-optimise.log   Device Optimise/Revert details
 snapshots\*.csv       Before/after process snapshots
 startup.log           Startup crash log
@@ -49,9 +65,25 @@ Use the **Logs** button in the app or run:
 open-logs.bat
 ```
 
-## Restore Last
+## Diagnostics
 
-Before boosting, Mem-Booster captures restorable executable paths for selected running apps. After boosting, Restore Last reopens those apps where possible and skips apps already running. It is best-effort and will not restore unsaved documents, exact window positions, browser tabs, every UWP app state, or protected service state.
+Use the **Diagnostics** button inside the app, or run:
+
+```bat
+collect-diagnostics.bat
+```
+
+It creates a ZIP on your Desktop containing logs, process snapshots, local profile, settings, and current process list. Share that ZIP when reporting issues.
+
+## v0.5.21 notes
+
+- Restore Last was removed from the UI because diagnostics showed app relaunch is not reliable enough for a professional workflow.
+- Boost no longer captures or writes restore sessions.
+- The UI now clearly recommends restarting Windows after a heavy boost to return to the normal app/background state.
+- Legacy restore sessions are cleared on startup.
+- GitHub update check now compares the installed version against the latest GitHub release and reports the latest release version in the update dialog.
+- Logo redesigned with a cleaner neon/phonk-tech style.
+- Theme toggle redesigned with a clean single-circle sun/moon icon.
 
 ## Build
 
@@ -68,46 +100,3 @@ Output:
 ```text
 src\MemBooster\bin\Release\net8.0-windows10.0.17763.0\win-x64\publish\Mem-Booster.exe
 ```
-
-## Diagnostics
-
-Use the **Diagnostics** button inside the app, or run:
-
-```bat
-collect-diagnostics.bat
-```
-
-It creates a ZIP on your Desktop containing logs, boost/restore history, process snapshots, restore session, local profile, settings, and current process list. Share that ZIP when reporting issues.
-
-## v0.5.20 reliability notes
-
-- Aggressive Select no longer auto-selects unknown process names. Unknown apps stay manually selectable, but Aggressive mode is now deterministic and safer.
-- Existing local/XML profiles are sanitised on load so old unsafe entries such as Windows service processes, VM service helpers, OOBE broker and temporary helper processes are dropped automatically.
-- Save Local and Export XML skip temporary/unsafe profile entries so old aggressive selections do not keep coming back.
-- Monitoring/LCD tools such as HWiNFO, TrafficMonitor, TRCC, USBLCD and USBLCDNEW are no longer selected by Aggressive mode. They remain manual review items.
-- Restore Last is more conservative and no longer attempts to relaunch service/helper processes such as SearchIndexer, SearchProtocolHost, sqlwriter, VMware services or Windows OOBE broker.
-- Successful Boost/Restore now reports in the status bar instead of forcing an extra completion pop-up, which keeps the workflow smoother and makes operation timing logs more accurate.
-- Logs are rotated at 5 MB so long test sessions do not create oversized log files.
-
-## Device Optimise
-
-Device Optimise is Windows 11 focused and requires administrator mode for the full workflow. The button opens a selectable optimisation list with a 15-second review timer. Recommended safe options are selected by default, while advanced/restart-required options are clearly marked.
-
-Recommended reversible options include Ultimate Performance power plan, Windows Game Mode, Xbox/Game DVR capture/background recording disabled, transparency/animation effects reduced, Widgets taskbar button hidden, and Windows Search indexing paused if it was running.
-
-Optional advanced options include enhanced pointer precision off, multimedia scheduler Games profile values, and hardware-accelerated GPU scheduling. These are still captured and reversible, but they are not selected by default because they can change input feel, audio/network scheduling behaviour, or require a restart.
-
-Revert Device Optimise restores the captured power plan, registry values and Windows Search state. Mem-Booster intentionally does not disable antivirus/security, Memory Integrity/VBS, HPET, GPU drivers, network adapters, VPN/firewall tools, game launchers, anti-cheat, Discord, MSI Afterburner or RivaTuner.
-
-## v0.5.20 notes
-
-- Device Optimise now opens a selectable optimisation list instead of applying a fixed set.
-- Recommended items are selected by default; advanced/restart-required items are opt-in.
-- Revert Device Optimise lists the captured options before reverting.
-- Device Optimise uses reversible settings only and stores the baseline in `%APPDATA%\Mem-Booster\device-optimise-state.xml`.
-
-
-## v0.5.20 restore reliability notes
-
-- Restore Last now skips Microsoft PC Manager packaged WindowsApps restore entries because diagnostics showed direct EXE relaunch can hang/fail for around 9 seconds.
-- Boost can still close PC Manager when selected; users can reopen it manually from Start if needed.

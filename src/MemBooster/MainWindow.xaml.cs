@@ -45,11 +45,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly bool _isAdministrator;
     private string _adminModeText = "Standard mode";
     private bool _isRunAsAdminButtonEnabled = true;
-    private const string CurrentVersion = "0.5.20";
+    private const string CurrentVersion = "0.5.21";
     private string _currentTheme = "Dark";
     private string _updateButtonText = "Updates";
     private bool _checkingForUpdates;
-    private bool _isRestoreLastEnabled;
     private bool _isRevertDeviceOptimiseEnabled;
     private string _operationProgressText = "Ready";
     private string _operationElapsedText = string.Empty;
@@ -119,11 +118,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         set => SetField(ref _updateButtonText, value);
     }
 
-    public bool IsRestoreLastEnabled
-    {
-        get => _isRestoreLastEnabled;
-        set => SetField(ref _isRestoreLastEnabled, value);
-    }
 
     public bool IsRevertDeviceOptimiseEnabled
     {
@@ -163,6 +157,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _loggerService = new LoggerService(_profileService.AppDataDirectory);
         _isAdministrator = AdminService.IsCurrentProcessElevated();
         _loggerService.Write($"Mem-Booster v{CurrentVersion} startup; elevated={_isAdministrator}; baseDirectory={AppContext.BaseDirectory}; appData={_profileService.AppDataDirectory}");
+        try
+        {
+            _profileService.ClearRestoreSession();
+            _loggerService.Write("Legacy restore session cleared. Mem-Booster now recommends restarting Windows after boosting instead of reopening apps automatically.");
+        }
+        catch (Exception ex)
+        {
+            _loggerService.Write($"Could not clear legacy restore session: {ex.Message}");
+        }
         AdminModeText = _isAdministrator ? "Administrator mode" : "Standard mode";
         IsRunAsAdminButtonEnabled = !_isAdministrator;
         ApplySavedTheme();
@@ -175,7 +178,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         DataContext = this;
 
         LoadLocalProfileQuietly();
-        UpdateRestoreButtonState();
         UpdateDeviceOptimiseButtonState();
         UpdateMemoryInfo();
 
@@ -320,12 +322,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void UpdateThemeToggle(bool light, bool animate)
     {
-        if (ThemeToggleIcon is null || ThemeToggleButton is null)
+        if (ThemeIconPath is null || ThemeToggleButton is null)
         {
             return;
         }
 
-        ThemeToggleIcon.Text = light ? "☀" : "☾";
+        var sunGeometry = "M10,3 A7,7 0 1 1 10,17 A7,7 0 1 1 10,3 M10,0.5 L10,2.3 M10,17.7 L10,19.5 M0.5,10 L2.3,10 M17.7,10 L19.5,10 M3.1,3.1 L4.4,4.4 M15.6,15.6 L16.9,16.9 M16.9,3.1 L15.6,4.4 M4.4,15.6 L3.1,16.9";
+        var moonGeometry = "M18,13.5 C16.4,15.4 14,16.6 11.3,16.6 C6.4,16.6 2.4,12.6 2.4,7.7 C2.4,5.1 3.5,2.7 5.3,1 C5.1,1.8 5,2.6 5,3.4 C5,8.4 9,12.4 14,12.4 C15.4,12.4 16.8,12.1 18,11.4 C18.2,12.1 18.2,12.8 18,13.5 Z";
+
+        ThemeIconPath.Data = Geometry.Parse(light ? sunGeometry : moonGeometry);
+        ThemeIconPath.Fill = light ? Brushes.Transparent : (Brush)Resources["AccentBrush"];
+        ThemeIconPath.Stroke = (Brush)Resources["AccentBrush"];
+        ThemeIconPath.StrokeThickness = light ? 1.8 : 1.6;
         ThemeToggleButton.ToolTip = light ? "Switch to dark theme" : "Switch to light theme";
 
         if (!animate)
@@ -337,17 +345,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             if (ThemeIconRotate is not null)
             {
-                ThemeIconRotate.Angle = light ? 0 : -25;
+                ThemeIconRotate.Angle = light ? 0 : -18;
             }
             return;
         }
 
         var easing = new CubicEase { EasingMode = EasingMode.EaseOut };
-        var duration = TimeSpan.FromMilliseconds(170);
+        var duration = TimeSpan.FromMilliseconds(180);
 
         if (ThemeIconRotate is not null)
         {
-            ThemeIconRotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(light ? 0 : -25, duration)
+            ThemeIconRotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(light ? 0 : -18, duration)
             {
                 EasingFunction = easing
             });
@@ -355,11 +363,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (ThemeIconScale is not null)
         {
-            ThemeIconScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.9, 1, duration)
+            ThemeIconScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.85, 1, duration)
             {
                 EasingFunction = easing
             });
-            ThemeIconScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.9, 1, duration)
+            ThemeIconScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.85, 1, duration)
             {
                 EasingFunction = easing
             });
@@ -514,17 +522,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void UpdateRestoreButtonState()
-    {
-        try
-        {
-            IsRestoreLastEnabled = _profileService.HasRestoreSession();
-        }
-        catch
-        {
-            IsRestoreLastEnabled = false;
-        }
-    }
 
     private void UpdateDeviceOptimiseButtonState()
     {
@@ -1005,7 +1002,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             UpdateMemoryInfo();
             await RefreshProcessesAsync(force: true, showProgress: true, progressContext: "Device Optimise refresh");
             UpdateOperationProgress("Device Optimise complete.", 100);
-            StatusText = result.Summary;
+            StatusText = result.Summary + " Restart Windows to fully return to the normal background-app state.";
             ProfileStatus = result.Summary;
 
             if (!result.Success)
@@ -1078,7 +1075,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             "⚠ Revert Device Optimise Warning",
             "Mem-Booster will restore the Windows 11 settings captured before Device Optimise. Captured items:\n\n" +
             appliedText +
-            "\n\nThis does not reopen apps closed by Boost Now. Use Restore Last for that. Restart Windows if any setting still feels stuck after revert, especially if you selected a restart-required optimisation.",
+            "\n\nThis does not reopen apps closed by Boost Now. Restart Windows after a heavy boost to return to a clean normal background-app state, especially if you selected a restart-required optimisation.",
             "Revert Device Optimise",
             15);
 
@@ -1170,7 +1167,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .ToList();
 
         var estimatedMemory = FormatBytes(runningMatches.Sum(p => p.WorkingSetBytes));
-        var restoreCandidates = _processService.GetRestorableProcessesByExecutableNames(_selectedProcessNames, message => _loggerService.Write("Preview: " + message));
         var runningLines = runningMatches.Count == 0
             ? "No selected profile apps are running right now."
             : string.Join(Environment.NewLine, runningMatches.Take(18).Select(p => $"• {p.DisplayName} ({p.ExeName}) - {p.MemoryText}, {p.InstanceCount} instance(s)"));
@@ -1181,7 +1177,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         MessageBox.Show(
             this,
-            $"Running matches to close: {runningMatches.Count}\nEstimated RAM currently used by matches: {estimatedMemory}\nRestorable apps captured: {restoreCandidates.Count}\n\n{runningLines}\n\nProfile entries not running / skipped:\n{skippedText}",
+            $"Running matches to close: {runningMatches.Count}\nEstimated RAM currently used by matches: {estimatedMemory}\n\n{runningLines}\n\nProfile entries not running / skipped:\n{skippedText}\n\nTip: restart Windows after a heavy boost to return to a clean normal background-app state.",
             "Boost Preview",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
@@ -1226,11 +1222,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var activeMatches = ProcessGroups.Count(p => p.IsSelected);
         var activeMemory = FormatBytes(ProcessGroups.Where(p => p.IsSelected).Sum(p => p.WorkingSetBytes));
-        var restoreCandidates = _processService.GetRestorableProcessesByExecutableNames(_selectedProcessNames, message => _loggerService.Write("Boost precheck: " + message));
-        _loggerService.Write($"Boost confirmation shown; selected={_selectedProcessNames.Count}; activeMatches={activeMatches}; activeMemory={activeMemory}; restoreCandidates={restoreCandidates.Count}; admin={_isAdministrator}");
+        _loggerService.Write($"Boost confirmation shown; selected={_selectedProcessNames.Count}; activeMatches={activeMatches}; activeMemory={activeMemory}; admin={_isAdministrator}");
         var confirm = ShowTimedWarning(
             "⚠ Boost Now Warning",
-            $"Warning: Mem-Booster will close the selected apps and their child/helper processes. This can close unsaved work and may temporarily break some Windows/app functionality.\n\nProfile entries: {_selectedProcessNames.Count}\nRunning matches: {activeMatches}\nEstimated RAM in matched apps: {activeMemory}\nRestore candidates captured: {restoreCandidates.Count}\nSmart close first: {(SmartCloseCheckBox.IsChecked == true ? "On" : "Off")}\n\nRestart the PC if you want to return to a fully clean normal state after a heavy boost.",
+            $"Warning: Mem-Booster will close the selected apps and their child/helper processes. This can close unsaved work and may temporarily break some Windows/app functionality.\n\nProfile entries: {_selectedProcessNames.Count}\nRunning matches: {activeMatches}\nEstimated RAM in matched apps: {activeMemory}\nSmart close first: {(SmartCloseCheckBox.IsChecked == true ? "On" : "Off")}\n\nMem-Booster will not try to reopen apps automatically. Restart Windows after a heavy boost if you want everything back to the normal background-app state. Use Revert Device Optimise if you changed Windows settings.",
             "Start Boost",
             5);
 
@@ -1248,17 +1243,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             _loggerService.WriteProcessSnapshot("before-boost", ProcessGroups, _selectedProcessNames);
-            UpdateOperationProgress("Snapshot saved. Creating restore point...", 18);
+            UpdateOperationProgress("Snapshot saved. Closing selected processes...", 24);
             operation.Checkpoint("Before-boost snapshot saved");
             var options = new TerminationOptions(SmartCloseCheckBox.IsChecked == true, 750, 1200);
             var selectedCsv = string.Join(", ", _selectedProcessNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
-
-            // Save before closing anything so Restore Last is available even if one process fails mid-boost.
-            _profileService.SaveRestoreSession(restoreCandidates);
-            UpdateRestoreButtonState();
-            _loggerService.WriteRestoreCapture(restoreCandidates);
-            UpdateOperationProgress($"Restore point saved ({restoreCandidates.Count} app(s)). Closing processes...", 35);
-            operation.Checkpoint($"Restore session saved; entries={restoreCandidates.Count}");
 
             var result = await Task.Run(() => _processService.KillProcessTreesByExecutableNames(_selectedProcessNames, options, message => operation.Checkpoint(message)));
             _loggerService.WriteBoost(selectedCsv, result);
@@ -1275,7 +1263,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? string.Empty
                 : "\n\nDetails:\n" + string.Join("\n", result.Messages.Take(8));
 
-            StatusText = result.Summary;
+            StatusText = result.Summary + " Restart Windows to fully return to the normal background-app state.";
             if (result.Failed > 0)
             {
                 MessageBox.Show(this, result.Summary + details, "Boost Completed With Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -1290,103 +1278,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             MessageBox.Show(this, ex.Message, "Boost Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             StatusText = $"Boost failed: {ex.Message}";
             _loggerService.Write($"Boost failed: {ex}");
-        }
-        finally
-        {
-            await HideOperationProgressAfterDelayAsync(500);
-            SetBusyState(false);
-            if (AutoRefreshCheckBox.IsChecked == true)
-            {
-                _processTimer.Start();
-            }
-        }
-    }
-
-
-    private async void RestoreLastButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        if (_busyOperation)
-        {
-            StatusText = "Another operation is already running.";
-            return;
-        }
-
-        IReadOnlyList<RestoreEntry> entries;
-        try
-        {
-            entries = _profileService.LoadRestoreSession();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Restore Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            UpdateRestoreButtonState();
-            return;
-        }
-
-        if (entries.Count == 0)
-        {
-            MessageBox.Show(this, "No restorable apps were captured from the previous boost.", "Restore Last", MessageBoxButton.OK, MessageBoxImage.Information);
-            UpdateRestoreButtonState();
-            return;
-        }
-
-        var preview = string.Join(Environment.NewLine, entries.Take(14).Select(e => $"• {e.DisplayName} ({e.ExeName})"));
-        if (entries.Count > 14)
-        {
-            preview += Environment.NewLine + $"• and {entries.Count - 14} more...";
-        }
-
-        var confirm = ShowTimedWarning(
-            "⚠ Restore Last Warning",
-            $"Warning: Restore Last will reopen apps captured before the previous boost. It cannot fully restore unsaved files, browser tab state, exact window positions, or every helper/service state. Some apps may reopen differently.\n\nApps to attempt: {entries.Count}\n\n{preview}\n\nApps already running will be skipped. Restart the device if you want to return to a clean normal state.",
-            "Start Restore",
-            5);
-
-        if (!confirm)
-        {
-            StatusText = "Restore cancelled.";
-            return;
-        }
-
-        using var operation = _loggerService.BeginOperation("RestoreLast", $"entries={entries.Count}");
-        SetBusyState(true, "Restoring previous apps...");
-        ShowOperationProgress("Preparing restore...", 5);
-        _processTimer.Stop();
-
-        try
-        {
-            _loggerService.WriteProcessSnapshot("before-restore", ProcessGroups, _selectedProcessNames);
-            UpdateOperationProgress("Before-restore snapshot saved. Reopening apps...", 25);
-            var result = await Task.Run(() => _processService.RestoreProcesses(entries, message => operation.Checkpoint(message)));
-            _loggerService.WriteRestoreResult(entries, result);
-            UpdateOperationProgress("Apps launched. Refreshing memory and app list...", 80);
-            UpdateMemoryInfo();
-            await RefreshProcessesAsync(force: true, showProgress: true, progressContext: "Restore refresh");
-            _loggerService.WriteProcessSnapshot("after-restore", ProcessGroups, _selectedProcessNames);
-            UpdateRestoreButtonState();
-            UpdateOperationProgress("Restore complete.", 100);
-            operation.Checkpoint("Restore refresh and snapshot complete");
-
-            var details = result.Messages.Count == 0
-                ? string.Empty
-                : Environment.NewLine + Environment.NewLine + "Details:" + Environment.NewLine + string.Join(Environment.NewLine, result.Messages.Take(8));
-
-            StatusText = result.Summary;
-            if (result.Failed > 0)
-            {
-                MessageBox.Show(this, result.Summary + details, "Restore Completed With Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-            else
-            {
-                _loggerService.Write($"Restore complete notification kept in status bar: {result.Summary}");
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Restore Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            StatusText = $"Restore failed: {ex.Message}";
-            _loggerService.Write($"Restore failed: {ex}");
         }
         finally
         {
@@ -1614,9 +1505,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             else
             {
                 UpdateButtonText = "Up to date";
+                var latestDisplay = string.IsNullOrWhiteSpace(result.LatestVersion) ? "No published release found" : $"v{result.LatestVersion}";
+                StatusText = $"Up to date. GitHub latest release: {latestDisplay}.";
                 if (!silent)
                 {
-                    MessageBox.Show(this, $"Mem-Booster is up to date.\n\nInstalled: v{CurrentVersion}", "Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(this, $"Mem-Booster is up to date.\n\nInstalled: v{CurrentVersion}\nGitHub latest release: {latestDisplay}", "Updates", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
         }

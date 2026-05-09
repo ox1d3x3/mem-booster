@@ -46,7 +46,7 @@ public sealed class ProfileService
         var document = new XDocument(
             new XDeclaration("1.0", "utf-8", "yes"),
             new XElement("MemBoosterSettings",
-                new XAttribute("version", "0.5.20"),
+                new XAttribute("version", "0.5.21"),
                 new XAttribute("theme", safeTheme)));
 
         document.Save(SettingsPath);
@@ -116,7 +116,7 @@ public sealed class ProfileService
         var document = new XDocument(
             new XDeclaration("1.0", "utf-8", "yes"),
             new XElement(RootName,
-                new XAttribute("version", "0.5.20"),
+                new XAttribute("version", "0.5.21"),
                 new XAttribute("name", string.IsNullOrWhiteSpace(profile.Name) ? "Gaming Boost" : profile.Name),
                 new XAttribute("createdUtc", DateTime.UtcNow.ToString("O")),
                 new XAttribute("author", "Ox1d3x3"),
@@ -126,6 +126,14 @@ public sealed class ProfileService
                         new XAttribute("executable", name))))));
 
         document.Save(path);
+    }
+
+    public void ClearRestoreSession()
+    {
+        if (File.Exists(LastRestoreSessionPath))
+        {
+            File.Delete(LastRestoreSessionPath);
+        }
     }
 
     public bool HasRestoreSession()
@@ -198,7 +206,7 @@ public sealed class ProfileService
         var document = new XDocument(
             new XDeclaration("1.0", "utf-8", "yes"),
             new XElement("MemBoosterRestoreSession",
-                new XAttribute("version", "0.5.20"),
+                new XAttribute("version", "0.5.21"),
                 new XAttribute("createdUtc", DateTime.UtcNow.ToString("O")),
                 new XElement("Apps",
                     safeEntries.Select(entry => new XElement("App",

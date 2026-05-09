@@ -1,7 +1,7 @@
 <Window x:Class="MemBooster.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Mem-Booster by Ox1d3x3 v0.5.20"
+        Title="Mem-Booster by Ox1d3x3 v0.5.21"
         Width="1200"
         Height="800"
         MinWidth="1080"
@@ -295,29 +295,36 @@
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
                     <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                        <TextBlock Text="v0.5.20" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" />
+                        <TextBlock Text="v0.5.21" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" />
                         <TextBlock Text="{Binding AdminModeText}" FontSize="12" Foreground="{DynamicResource TextMutedBrush}" HorizontalAlignment="Right" Margin="0,3,0,0" />
                     </StackPanel>
                     <Button x:Name="RunAsAdminButton" Content="Run as Admin" Style="{StaticResource ModernButton}" Click="RunAsAdminButton_Click" IsEnabled="{Binding IsRunAsAdminButtonEnabled}" Margin="0,0,12,0" />
 
-                    <Button x:Name="ThemeToggleButton" Width="40" Height="40" Style="{StaticResource ThemeToggleButtonStyle}" Click="ThemeToggleButton_Click" Margin="0,0,10,0" ToolTip="Switch theme">
+                    <Button x:Name="ThemeToggleButton" Width="42" Height="42" Style="{StaticResource ThemeToggleButtonStyle}" Click="ThemeToggleButton_Click" Margin="0,0,10,0" ToolTip="Switch theme">
                         <Grid>
-                            <Ellipse Fill="{DynamicResource ButtonBrush}" Stroke="{DynamicResource BorderBrushSoft}" StrokeThickness="1" />
-                            <TextBlock x:Name="ThemeToggleIcon"
-                                       Text="☾"
-                                       Foreground="{DynamicResource AccentBrush}"
-                                       FontSize="18"
-                                       FontWeight="SemiBold"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       RenderTransformOrigin="0.5,0.5">
-                                <TextBlock.RenderTransform>
+                            <Ellipse Fill="{DynamicResource ButtonBrush}" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.4" Opacity="0.95" />
+                            <Ellipse Width="30" Height="30" Fill="{DynamicResource CardAltBrush}" Opacity="0.55" />
+                            <Path x:Name="ThemeIconPath"
+                                  Width="21"
+                                  Height="21"
+                                  Stretch="Uniform"
+                                  Data="M18,13.5 C16.4,15.4 14,16.6 11.3,16.6 C6.4,16.6 2.4,12.6 2.4,7.7 C2.4,5.1 3.5,2.7 5.3,1 C5.1,1.8 5,2.6 5,3.4 C5,8.4 9,12.4 14,12.4 C15.4,12.4 16.8,12.1 18,11.4 C18.2,12.1 18.2,12.8 18,13.5 Z"
+                                  Fill="{DynamicResource AccentBrush}"
+                                  Stroke="{DynamicResource AccentBrush}"
+                                  StrokeThickness="1.6"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  RenderTransformOrigin="0.5,0.5">
+                                <Path.RenderTransform>
                                     <TransformGroup>
                                         <ScaleTransform x:Name="ThemeIconScale" ScaleX="1" ScaleY="1" />
-                                        <RotateTransform x:Name="ThemeIconRotate" Angle="0" />
+                                        <RotateTransform x:Name="ThemeIconRotate" Angle="-18" />
                                     </TransformGroup>
-                                </TextBlock.RenderTransform>
-                            </TextBlock>
+                                </Path.RenderTransform>
+                            </Path>
                         </Grid>
                     </Button>
                     <Button x:Name="UpdateButton" Content="{Binding UpdateButtonText}" Style="{StaticResource LinkButton}" Click="CheckUpdatesButton_Click" Margin="0,0,8,0" ToolTip="Check GitHub releases" />
@@ -401,11 +408,10 @@
                     <Button Content="Device Optimise" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="DeviceOptimiseButton_Click" ToolTip="Choose and apply reversible Windows 11 gaming-session device settings." />
                     <Button Content="Revert Device Optimise" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="RevertDeviceOptimiseButton_Click" IsEnabled="{Binding IsRevertDeviceOptimiseEnabled}" ToolTip="Restore the Windows settings captured by Device Optimise." />
                     <Button Content="Preview Boost" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="PreviewButton_Click" />
-                    <Button Content="Restore Last" Style="{StaticResource ModernButton}" Margin="0,0,8,0" Click="RestoreLastButton_Click" IsEnabled="{Binding IsRestoreLastEnabled}" ToolTip="Reopen apps captured during the previous boost." />
                     <Button Content="Clear Selected" Style="{StaticResource ModernButton}" Margin="0,0,18,0" Click="ClearSelectionButton_Click" />
                     <CheckBox x:Name="AutoRefreshCheckBox" Content="Auto-refresh" IsChecked="True" Checked="AutoRefreshCheckBox_CheckedChanged" Unchecked="AutoRefreshCheckBox_CheckedChanged" Margin="0,0,18,0" VerticalAlignment="Center" />
                     <CheckBox x:Name="SmartCloseCheckBox" Content="Smart close first" IsChecked="True" Margin="0,0,18,0" VerticalAlignment="Center" />
-                    <TextBlock Text="Tip: click an app name to add it. Use the checkbox or the selected list to remove it." Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" FontSize="12" />
+                    <TextBlock Text="Tip: Boost closes apps for this session. Restart Windows to return to the normal background-app state. Use Revert Device Optimise for Windows setting changes." Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap" MaxWidth="520" />
                 </WrapPanel>
             </Grid>
         </Border>

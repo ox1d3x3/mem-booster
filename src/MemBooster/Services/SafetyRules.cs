@@ -864,7 +864,7 @@ public static class SafetyRules
             return false;
         }
 
-        // v0.5.20: do not auto-select unknown process names in Aggressive mode.
+        // v0.5.21: do not auto-select unknown process names in Aggressive mode.
         // Unknown apps remain manually selectable/reviewable, but Aggressive should stay deterministic and stable.
         return false;
     }
@@ -886,7 +886,7 @@ public static class SafetyRules
 
         // Packaged WindowsApps executables are not always safe to relaunch by direct file path.
         // Microsoft PC Manager showed a ~9 second Process.Start delay/failure in diagnostics,
-        // so it is intentionally skipped during Restore Last. Users can open it normally if needed.
+        // so it is intentionally skipped by automatic relaunch logic. Users can open it normally if needed.
         if (normalisedPath.Contains("\\windowsapps\\microsoft.microsoftpcmanager_", StringComparison.OrdinalIgnoreCase))
         {
             return false;
