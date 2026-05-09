@@ -16,6 +16,32 @@ Mem-Booster is a native Windows 11 utility designed to prepare your PC for a cle
 
 ---
 
+## Basic usage
+
+1. Open **Mem-Booster**.
+2. Review the running apps list.
+3. Select apps manually or use **Safe Select**, **Extreme Select**, or **Aggressive Select**.
+4. Review the **Selected apps** panel.
+5. Optional: click **Device Optimise** and choose the Windows 11 settings you want to apply.
+6. Click **BOOST NOW**.
+7. After gaming, use **Revert Device Optimise** if you applied Device Optimise.
+8. Restart Windows if you want all closed background apps and services to return normally.
+
+---
+
+## Profiles
+
+Mem-Booster supports local and shareable XML profiles.
+
+- **Save Local** saves your selected apps on your PC.
+- **Export XML** creates a shareable profile.
+- **Load XML** imports a profile from another user or system.
+
+If a profile contains apps that are not installed or not currently running, Mem-Booster skips them automatically.
+
+
+---
+
 ## Requirements
 
 ### To run the published app
@@ -79,31 +105,6 @@ Examples of supported optimisation areas:
 - Optional advanced settings such as enhanced pointer precision, multimedia scheduler profile, and hardware-accelerated GPU scheduling
 
 Mem-Booster intentionally does not disable or modify antivirus, Defender, Memory Integrity/VBS, HPET, GPU drivers, game launchers, anti-cheat, Discord, MSI Afterburner, RivaTuner, VPNs, firewalls, RGB tools, or fan-control tools.
-
----
-
-## Basic usage
-
-1. Open **Mem-Booster**.
-2. Review the running apps list.
-3. Select apps manually or use **Safe Select**, **Extreme Select**, or **Aggressive Select**.
-4. Review the **Selected apps** panel.
-5. Optional: click **Device Optimise** and choose the Windows 11 settings you want to apply.
-6. Click **BOOST NOW**.
-7. After gaming, use **Revert Device Optimise** if you applied Device Optimise.
-8. Restart Windows if you want all closed background apps and services to return normally.
-
----
-
-## Profiles
-
-Mem-Booster supports local and shareable XML profiles.
-
-- **Save Local** saves your selected apps on your PC.
-- **Export XML** creates a shareable profile.
-- **Load XML** imports a profile from another user or system.
-
-If a profile contains apps that are not installed or not currently running, Mem-Booster skips them automatically.
 
 ---
 
