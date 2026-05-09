@@ -20,7 +20,7 @@ Mem-Booster is a native Windows 11 utility designed to prepare your PC for a cle
 
 ### To run the published app
 
-If you use the self-contained release build, no separate .NET runtime should be required.
+If you use the general release build, no separate .NET runtime required.
 
 For Portable install:
 - **.NET 8 Desktop Runtime**
