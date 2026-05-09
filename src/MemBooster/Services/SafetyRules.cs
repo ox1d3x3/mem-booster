@@ -864,7 +864,7 @@ public static class SafetyRules
             return false;
         }
 
-        // v0.5.26: do not auto-select unknown process names in Aggressive mode.
+        // v0.5.27: do not auto-select unknown process names in Aggressive mode.
         // Unknown apps remain manually selectable/reviewable, but Aggressive should stay deterministic and stable.
         return false;
     }

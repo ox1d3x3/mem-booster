@@ -1,4 +1,4 @@
-# Mem-Booster by Ox1d3x3 v0.5.26
+# Mem-Booster by Ox1d3x3 v0.5.27
 
 Native Windows 11 WPF app for preparing a gaming session by closing selected non-gaming background apps, applying optional reversible Windows 11 gaming-session settings, and keeping clear logs for troubleshooting.
 
@@ -75,13 +75,15 @@ collect-diagnostics.bat
 
 It creates a ZIP on your Desktop containing logs, process snapshots, local profile, settings, and current process list. Share that ZIP when reporting issues.
 
-## v0.5.26 notes
+## v0.5.27 notes
 
-- Added optional **Fast boost** mode. This skips graceful close and force-closes selected apps faster. It is off by default.
-- Boost now pauses auto-refresh while the warning dialog is open, reducing UI churn during confirmation.
-- Auto-refresh performance logging is now quieter. Normal fast refreshes are not written to the performance log; only slow auto-refreshes or failures are logged.
-- Manual refresh, initial load, boost, device optimise, update checks and diagnostics still keep detailed timing logs.
-- Selection behaviour from v0.5.25 is retained: click app name or checkbox to select/remove.
+- Restore Last was removed from the UI because diagnostics showed app relaunch is not reliable enough for a professional workflow.
+- Boost no longer captures or writes restore sessions.
+- The UI now clearly recommends restarting Windows after a heavy boost to return to the normal app/background state.
+- Legacy restore sessions are cleared on startup.
+- GitHub update check now compares the installed version against the latest GitHub release and reports the latest release version in the update dialog.
+- Logo redesigned with a cleaner neon/phonk-tech style.
+- Theme toggle redesigned with a clean single-circle sun/moon icon.
 
 ## Build
 
