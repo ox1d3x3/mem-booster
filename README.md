@@ -83,16 +83,6 @@ Mem-Booster intentionally does not disable or modify antivirus, Defender, Memory
 
 ---
 
-## Disclaimer
-
-Mem-Booster is provided **as is**, with **no warranty** of any kind.
-
-Use it at your own risk. The app is designed to avoid unsafe Windows modifications, but closing apps and changing system settings can still affect running programs, unsaved work, background sync, overlays, notifications, or other active tasks.
-
-Always save your work before using **BOOST NOW** or **Device Optimise**. Restart Windows if you want to return to a normal background-app state.
-
----
-
 ## Basic usage
 
 1. Open **Mem-Booster**.
@@ -174,5 +164,15 @@ src\MemBooster\bin\Release\net8.0-windows10.0.17763.0\win-x64\publish\Mem-Booste
 ## Project
 
 Created by **Ox1d3x3**
+
+--- 
+## Disclaimer
+
+Mem-Booster is provided **as is**, with **no warranty** of any kind.
+
+Use it at your own risk. The app is designed to avoid unsafe Windows modifications, but closing apps and changing system settings can still affect running programs, unsaved work, background sync, overlays, notifications, or other active tasks.
+
+Always save your work before using **BOOST NOW** or **Device Optimise**. Restart Windows if you want to return to a normal background-app state.
+
 
 GitHub: `https://github.com/ox1d3x3/mem-booster`
