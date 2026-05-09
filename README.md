@@ -42,26 +42,6 @@ If a profile contains apps that are not installed or not currently running, Mem-
 
 ---
 
-## Requirements
-
-### To run the published app
-
-If you use the general release build, no separate .NET runtime required.
-
-For Portable install:
-- **.NET 8 Desktop Runtime**
-Download: https://dotnet.microsoft.com/en-us/download/dotnet/8.0
-
-
-### BYO - Build Your Own
-
-Install:
-- Visual Studio 2022
-- .NET 8 SDK
-- .NET desktop development workload
-
----
-
 ## How it works
 
 Mem-Booster scans running user-level apps and groups them by executable name. You can manually select apps, load a saved profile, or use one of the built-in selection modes.
@@ -105,6 +85,26 @@ Examples of supported optimisation areas:
 - Optional advanced settings such as enhanced pointer precision, multimedia scheduler profile, and hardware-accelerated GPU scheduling
 
 Mem-Booster intentionally does not disable or modify antivirus, Defender, Memory Integrity/VBS, HPET, GPU drivers, game launchers, anti-cheat, Discord, MSI Afterburner, RivaTuner, VPNs, firewalls, RGB tools, or fan-control tools.
+
+---
+
+## Requirements
+
+### To run the published app
+
+If you use the general release build, no separate .NET runtime required.
+
+For Portable install:
+- **.NET 8 Desktop Runtime**
+Download: https://dotnet.microsoft.com/en-us/download/dotnet/8.0
+
+
+### BYO - Build Your Own
+
+Install:
+- Visual Studio 2022
+- .NET 8 SDK
+- .NET desktop development workload
 
 ---
 
