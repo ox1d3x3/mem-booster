@@ -45,7 +45,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly bool _isAdministrator;
     private string _adminModeText = "Standard mode";
     private bool _isRunAsAdminButtonEnabled = true;
-    private const string CurrentVersion = "0.5.21";
+    private const string CurrentVersion = "0.5.22";
     private string _currentTheme = "Dark";
     private string _updateButtonText = "Updates";
     private bool _checkingForUpdates;
@@ -1340,7 +1340,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (process.IsSelected)
         {
             StatusText = $"{process.DisplayName} is already selected. Use the checkbox or selected-apps panel to remove it.";
-            _loggerService.Write($"Manual select ignored ({source}): {process.DisplayName} | {process.ExeName} | reason=already-selected");
             return;
         }
 
