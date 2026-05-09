@@ -16,7 +16,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo Publishing Mem-Booster v0.5.19 self-contained single EXE...
+echo Publishing Mem-Booster v0.5.20 self-contained single EXE...
 dotnet publish .\src\MemBooster\MemBooster.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:EnableCompressionInSingleFile=true /p:PublishReadyToRun=false
 if errorlevel 1 (
   echo.

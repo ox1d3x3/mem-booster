@@ -1,4 +1,4 @@
-# Mem-Booster by Ox1d3x3 v0.5.19
+# Mem-Booster by Ox1d3x3 v0.5.20
 
 Native Windows WPF app for quickly preparing Windows for gaming by closing selected background apps and restoring them later where possible.
 
@@ -79,7 +79,7 @@ collect-diagnostics.bat
 
 It creates a ZIP on your Desktop containing logs, boost/restore history, process snapshots, restore session, local profile, settings, and current process list. Share that ZIP when reporting issues.
 
-## v0.5.19 reliability notes
+## v0.5.20 reliability notes
 
 - Aggressive Select no longer auto-selects unknown process names. Unknown apps stay manually selectable, but Aggressive mode is now deterministic and safer.
 - Existing local/XML profiles are sanitised on load so old unsafe entries such as Windows service processes, VM service helpers, OOBE broker and temporary helper processes are dropped automatically.
@@ -99,9 +99,15 @@ Optional advanced options include enhanced pointer precision off, multimedia sch
 
 Revert Device Optimise restores the captured power plan, registry values and Windows Search state. Mem-Booster intentionally does not disable antivirus/security, Memory Integrity/VBS, HPET, GPU drivers, network adapters, VPN/firewall tools, game launchers, anti-cheat, Discord, MSI Afterburner or RivaTuner.
 
-## v0.5.19 notes
+## v0.5.20 notes
 
 - Device Optimise now opens a selectable optimisation list instead of applying a fixed set.
 - Recommended items are selected by default; advanced/restart-required items are opt-in.
 - Revert Device Optimise lists the captured options before reverting.
 - Device Optimise uses reversible settings only and stores the baseline in `%APPDATA%\Mem-Booster\device-optimise-state.xml`.
+
+
+## v0.5.20 restore reliability notes
+
+- Restore Last now skips Microsoft PC Manager packaged WindowsApps restore entries because diagnostics showed direct EXE relaunch can hang/fail for around 9 seconds.
+- Boost can still close PC Manager when selected; users can reopen it manually from Start if needed.

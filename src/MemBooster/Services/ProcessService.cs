@@ -443,6 +443,14 @@ public sealed class ProcessService
                 continue;
             }
 
+            if (!SafetyRules.IsRestorePathAllowed(entry.FilePath))
+            {
+                skipped++;
+                messages.Add($"Skipped packaged/helper app: {entry.DisplayName}");
+                trace?.Invoke($"Restore skip packaged/helper path: {entry.DisplayName} | {entry.FilePath}");
+                continue;
+            }
+
             if (!File.Exists(entry.FilePath))
             {
                 failed++;

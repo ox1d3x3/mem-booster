@@ -45,7 +45,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly bool _isAdministrator;
     private string _adminModeText = "Standard mode";
     private bool _isRunAsAdminButtonEnabled = true;
-    private const string CurrentVersion = "0.5.19";
+    private const string CurrentVersion = "0.5.20";
     private string _currentTheme = "Dark";
     private string _updateButtonText = "Updates";
     private bool _checkingForUpdates;

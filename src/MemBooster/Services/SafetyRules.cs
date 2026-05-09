@@ -332,7 +332,8 @@ public static class SafetyRules
         "dropboxupdate.exe",
         "onedrivestandaloneupdater.exe",
 
-        // PC Manager and package/background helpers
+        // PC Manager and package/background helpers. PC Manager is a packaged WindowsApps app and is slow/unreliable to relaunch by direct EXE path.
+        "mspcmanager.exe",
         "mspcmanagercore.exe",
         "mspcmanagerservice.exe",
         "windowspackagemanagerserver.exe",
@@ -863,7 +864,7 @@ public static class SafetyRules
             return false;
         }
 
-        // v0.5.19: do not auto-select unknown process names in Aggressive mode.
+        // v0.5.20: do not auto-select unknown process names in Aggressive mode.
         // Unknown apps remain manually selectable/reviewable, but Aggressive should stay deterministic and stable.
         return false;
     }
@@ -872,6 +873,26 @@ public static class SafetyRules
     {
         var normalised = NormaliseProcessName(processName);
         return !IsBlocked(normalised) && !RestoreExcludedProcessNames.Contains(normalised);
+    }
+
+    public static bool IsRestorePathAllowed(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return false;
+        }
+
+        var normalisedPath = filePath.Replace('/', '\\').ToLowerInvariant();
+
+        // Packaged WindowsApps executables are not always safe to relaunch by direct file path.
+        // Microsoft PC Manager showed a ~9 second Process.Start delay/failure in diagnostics,
+        // so it is intentionally skipped during Restore Last. Users can open it normally if needed.
+        if (normalisedPath.Contains("\\windowsapps\\microsoft.microsoftpcmanager_", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     public static bool IsKnownHelperProcess(string processName)
