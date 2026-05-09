@@ -9,17 +9,10 @@ The goal is simple: free up system resources before gaming without using unsafe 
 ## Features
 
 - Native Windows 11 app built with .NET 8 WPF
-- Live system memory usage
-- Real-time running app list
-- Easy app selection and selected-apps panel
 - Local profiles and shareable XML profiles
 - Safe Select, Extreme Select, and Aggressive Select modes
-- Smart close first, with optional force-close behaviour
 - Optional Fast Boost mode
 - Reversible Windows 11 Device Optimise options
-- Dark and light theme support
-- GitHub update check
-- Logs and diagnostics for troubleshooting
 
 ---
 
@@ -32,12 +25,12 @@ If you use the self-contained release build, no separate .NET runtime should be 
 If you build or run the framework-dependent version, install:
 
 - **.NET 8 Desktop Runtime**
+Download: https://dotnet.microsoft.com/en-us/download/dotnet/8.0
 - Windows 11
 
-### To build from source
+### BYO - Build Your Own
 
 Install:
-
 - Visual Studio 2022
 - .NET 8 SDK
 - .NET desktop development workload
