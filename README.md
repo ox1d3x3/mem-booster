@@ -1,4 +1,4 @@
-# Mem-Booster by Ox1d3x3
+# Mem-Booster/Background Task killer by Ox1d3x3
 
 Mem-Booster is a native Windows 11 utility designed to prepare your PC for a cleaner gaming session. It helps close selected non-gaming background apps, reduce unnecessary background activity, and optionally apply reversible Windows 11 gaming-session optimisations.
 
