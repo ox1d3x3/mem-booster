@@ -1,0 +1,572 @@
+﻿<Window
+    x:Class="MemBooster.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:converters="using:MemBooster.Converters"
+    Title="Mem-Booster by Ox1d3x3 v0.6.13">
+<Border x:ConnectionId='2' x:Name="RootBorder"
+            Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+            Padding="20">
+        <Border.Resources>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+            <converters:BoolToOpacityConverter x:Key="BoolToOpacityConverter" />
+        <SolidColorBrush x:Key="MbAccentBrush" Color="#22C55E" />
+        <SolidColorBrush x:Key="MbBoostBrush" Color="#0F6B3E" />
+
+        <Style x:Key="FlatRowButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        </Style>
+
+        <Style x:Key="QuietButtonStyle" TargetType="Button">
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="MinHeight" Value="34" />
+        </Style>
+    
+        </Border.Resources>
+        <Grid x:ConnectionId='3' x:Name="RootGrid" RowSpacing="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14"
+                    Padding="16">
+                <Grid ColumnSpacing="14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Spacing="14">
+                        <Border Width="56"
+                                Height="56"
+                                CornerRadius="10"
+                                Background="{ThemeResource ControlFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1">
+                            <Image Source="Assets/mem-booster-logo.png"
+                                   Width="42"
+                                   Height="42"
+                                   Stretch="Uniform"/>
+                        </Border>
+
+                        <StackPanel VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="Mem-Booster"
+                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                           FontSize="27"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="by Ox1d3x3"
+                                           Foreground="{StaticResource MbAccentBrush}"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Bottom"
+                                           Margin="0,0,0,4"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Spacing="8">
+                        <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
+                            <TextBlock x:ConnectionId='47' x:Name="VersionTextBlock"
+                                       Text="v0.6.13"
+                                       Foreground="{StaticResource MbAccentBrush}"
+                                       FontWeight="SemiBold"
+                                       HorizontalAlignment="Right"/>
+                            <TextBlock x:ConnectionId='48' x:Name="AdminModeTextBlock"
+                                       Text="Standard mode"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       FontSize="12"
+                                       HorizontalAlignment="Right"/>
+                        </StackPanel>
+
+                        <Button x:ConnectionId='37' x:Name="RunAsAdminButton"
+                                Content="Run as Admin"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                              />
+
+                        <Button x:ConnectionId='38' x:Name="ThemeToggleButton"
+                                MinWidth="96"
+                                Padding="8,6"
+                                                               
+                                ToolTipService.ToolTip="Switch theme">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Grid Width="44" Height="24" VerticalAlignment="Center">
+                                    <Border CornerRadius="12"
+                                            Background="{ThemeResource ControlFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                            BorderThickness="1"/>
+                                    <Border x:ConnectionId='44' x:Name="ThemeThumb"
+                                            Width="20"
+                                            Height="20"
+                                            CornerRadius="10"
+                                            Background="{StaticResource MbAccentBrush}"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Center"
+                                            Margin="2,0,0,0">
+                                        <Border.RenderTransform>
+                                            <TranslateTransform x:ConnectionId='45' x:Name="ThemeThumbTranslate" X="0"/>
+                                        </Border.RenderTransform>
+                                        <TextBlock x:ConnectionId='46' x:Name="ThemeIconText"
+                                                   Text="☾"
+                                                   Foreground="#07120C"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"/>
+                                    </Border>
+                                </Grid>
+                                <TextBlock x:ConnectionId='43' x:Name="ThemeLabelText"
+                                           Text="Dark"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button x:ConnectionId='39' x:Name="UpdateButton"
+                                Content="Updates"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                                />
+                        <Button x:ConnectionId='40' Content="Diagnostics"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                                      />
+                        <Button x:ConnectionId='41' Content="Logs"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                            />
+                        <Button x:ConnectionId='42' Content="GitHub"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                        />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" Margin="0,16,0,0" ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="1.55*"/>
+                </Grid.ColumnDefinitions>
+
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="16">
+                    <StackPanel>
+                        <TextBlock Text="System memory"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   FontSize="13"/>
+                        <TextBlock x:ConnectionId='35' x:Name="MemoryTextBlock"
+                                   Text="Loading..."
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                   FontSize="22"
+                                   FontWeight="SemiBold"
+                                   Margin="0,8,0,8"/>
+                        <ProgressBar x:ConnectionId='36' x:Name="MemoryBar"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Value="0"
+                                     Height="8"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="1"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="16">
+                    <StackPanel>
+                        <TextBlock Text="Running apps"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   FontSize="13"/>
+                        <TextBlock x:ConnectionId='34' x:Name="ProcessCountTextBlock"
+                                   Text="0"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                   FontSize="28"
+                                   FontWeight="SemiBold"
+                                   Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="16">
+                    <StackPanel>
+                        <TextBlock Text="Selected profile"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   FontSize="13"/>
+                        <TextBlock x:ConnectionId='33' x:Name="SelectedTextBlock"
+                                   Text="0 selected"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                   FontSize="20"
+                                   FontWeight="SemiBold"
+                                   Margin="0,10,0,0"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="3"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="16">
+                    <StackPanel>
+                        <TextBlock Text="Profile status"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   FontSize="13"/>
+                        <TextBlock x:ConnectionId='32' x:Name="ProfileStatusTextBlock"
+                                   Text="No saved profile loaded."
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Margin="0,10,0,0"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Grid.Row="2"
+                    Margin="0,16,0,0"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="12">
+                <Grid RowSpacing="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="Search"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   VerticalAlignment="Center"/>
+                        <TextBox x:ConnectionId='31' x:Name="SearchBox"
+                                 Width="420"
+                                                                    
+                                 PlaceholderText="Filter running apps"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <Button x:ConnectionId='26' Content="Refresh Running Apps"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                           />
+                        <Button x:ConnectionId='27' Content="Save Local"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                             />
+                        <Button x:ConnectionId='28' Content="Export XML"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                             />
+                        <Button x:ConnectionId='29' Content="Load XML"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                           />
+                        <Button x:ConnectionId='30' Content="BOOST NOW"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                         
+                                Background="{StaticResource MbBoostBrush}"
+                                Foreground="White"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="1"
+                                Grid.ColumnSpan="2"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Spacing="8">
+                        <Button x:ConnectionId='17' Content="Safe Select"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                                     />
+                        <Button x:ConnectionId='18' Content="Extreme Select"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                                 />
+                        <Button x:ConnectionId='19' Content="Aggressive Select"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                                    />
+                        <Button x:ConnectionId='20' Content="Device Optimise"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                                  />
+                        <Button x:ConnectionId='21' x:Name="RevertDeviceOptimiseButton"
+                                Content="Revert Device Optimise"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                                        />
+                        <Button x:ConnectionId='22' Content="Preview Boost"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                           />
+                        <Button x:ConnectionId='23' Content="Clear Selected"
+                                Style="{StaticResource QuietButtonStyle}"
+                                                                  />
+                        <CheckBox x:ConnectionId='24' x:Name="SmartCloseCheckBox"
+                                  Content="Smart close first"
+                                  IsChecked="True"
+                                  VerticalAlignment="Center"/>
+                        <CheckBox x:ConnectionId='25' x:Name="FastBoostCheckBox"
+                                  Content="Fast boost"
+                                  VerticalAlignment="Center"/>
+                        <TextBlock Text="Tip: apps are scanned once. Use Refresh Running Apps when needed."
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="520"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="3" Margin="0,16,0,0" ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="310"/>
+                </Grid.ColumnDefinitions>
+
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12">
+                    <ListView x:ConnectionId='13' x:Name="ProcessesList"
+                              SelectionMode="None"
+                              Background="Transparent">
+                        <ListView.Header>
+                            <Border Padding="12,10"
+                                    Background="{ThemeResource ControlFillColorDefaultBrush}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="68"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="95"/>
+                                    <ColumnDefinition Width="220"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Select"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="App"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Grid.Column="2"
+                                           Text="Memory"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Grid.Column="3"
+                                           Text="Instances"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Grid.Column="4"
+                                           Text="Status"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           FontWeight="SemiBold"/>
+                                </Grid>
+                            </Border>
+                        </ListView.Header>
+
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="6,3">
+                                    <Border Background="#0A66C2"
+                                            Opacity="{Binding IsSelected, Converter={StaticResource BoolToOpacityConverter}}"
+                                            CornerRadius="8"/>
+
+                                    <Grid Margin="8,6" ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="58"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="95"/>
+                                            <ColumnDefinition Width="220"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <Button x:ConnectionId='15'                              
+                                                Style="{StaticResource FlatRowButtonStyle}"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Width="34"
+                                                Height="34"
+                                                IsEnabled="{Binding CanSelect}">
+                                            <Grid Width="24" Height="24">
+                                                <Border Width="20"
+                                                        Height="20"
+                                                        CornerRadius="5"
+                                                        BorderBrush="{ThemeResource TextFillColorSecondaryBrush}"
+                                                        BorderThickness="1"
+                                                        Background="{ThemeResource ControlFillColorDefaultBrush}"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"/>
+                                                <TextBlock Text="✓"
+                                                           Visibility="{Binding IsSelected, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                           Foreground="{StaticResource MbAccentBrush}"
+                                                           FontWeight="SemiBold"
+                                                           FontSize="16"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Button>
+
+                                        <Button x:ConnectionId='16' Grid.Column="1"
+                                                                              
+                                                Style="{StaticResource FlatRowButtonStyle}"
+                                                HorizontalAlignment="Stretch">
+                                            <StackPanel Margin="4,3">
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                           FontSize="15"
+                                                           FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding ExeName}"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                           FontSize="12"/>
+                                            </StackPanel>
+                                        </Button>
+
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding MemoryText}"
+                                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="3"
+                                                   Text="{Binding InstanceCount}"
+                                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                   VerticalAlignment="Center"/>
+
+                                        <StackPanel Grid.Column="4" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding RiskLabel}"
+                                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                       FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding RiskDescription}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       FontSize="11"
+                                                       TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Border>
+
+                <Border Grid.Column="1"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="14">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Text="Selected apps"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"/>
+                        <TextBlock x:ConnectionId='9' x:Name="SelectedPanelTextBlock"
+                                   Grid.Row="1"
+                                   Text="0 selected"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Margin="0,4,0,10"
+                                   FontSize="12"/>
+                        <ListView x:ConnectionId='10' x:Name="SelectedList"
+                                  Grid.Row="2"
+                                  SelectionMode="None"
+                                  Background="Transparent">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{ThemeResource ControlFillColorDefaultBrush}"
+                                            CornerRadius="8"
+                                            Padding="10"
+                                            Margin="0,0,0,8">
+                                        <Grid ColumnSpacing="8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                           FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding Subtitle}"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                           FontSize="11"/>
+                                            </StackPanel>
+                                            <Button x:ConnectionId='12' Grid.Column="1"
+                                                    Content="×"
+                                                                                   
+                                                    Width="32"
+                                                    Height="32"
+                                                    Padding="0"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <Border Grid.Row="4"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="10,8"
+                    Margin="0,8,0,0">
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock x:ConnectionId='5' x:Name="StatusTextBlock"
+                                   Text="Ready."
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   FontSize="12"/>
+                        <StackPanel x:ConnectionId='6' x:Name="ProgressPanel"
+                                    Orientation="Horizontal"
+                                    Spacing="10"
+                                    Margin="0,6,0,0"
+                                    Visibility="Collapsed">
+                            <ProgressBar x:ConnectionId='7' x:Name="OperationProgress"
+                                         Width="260"
+                                         Height="6"
+                                         Minimum="0"
+                                         Maximum="100"/>
+                            <TextBlock x:ConnectionId='8' x:Name="OperationProgressText"
+                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                       FontSize="11"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <TextBlock x:ConnectionId='4' x:Name="ElapsedTextBlock"
+                               Grid.Column="1"
+                               Text=""
+                               Foreground="{StaticResource MbAccentBrush}"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
+

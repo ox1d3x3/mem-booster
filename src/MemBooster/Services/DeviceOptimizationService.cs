@@ -10,7 +10,7 @@ namespace MemBooster.Services;
 
 public sealed class DeviceOptimizationService
 {
-    private const string StateVersion = "0.5.27";
+    private const string StateVersion = "0.6.13";
     private static readonly Guid UltimatePerformanceTemplateGuid = Guid.Parse("e9a42b02-d5df-448d-aa00-03f14749eb61");
     private readonly string _statePath;
 

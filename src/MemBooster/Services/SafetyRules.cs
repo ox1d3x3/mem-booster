@@ -772,7 +772,112 @@ public static class SafetyRules
         "msteams.exe",
         "telegram.exe",
         "whatsapp.exe",
-        "signal.exe"
+        "signal.exe",
+
+        // Broader non-gaming workstation/productivity apps for Aggressive Select.
+        // These are selected only after gaming/driver/security/core Windows exclusions are checked.
+        "photoshop.exe",
+        "illustrator.exe",
+        "indesign.exe",
+        "lightroom.exe",
+        "lightroomclassic.exe",
+        "lightroomcc.exe",
+        "premierepro.exe",
+        "adobe premiere pro.exe",
+        "afterfx.exe",
+        "audition.exe",
+        "adobe media encoder.exe",
+        "mediaencoder.exe",
+        "bridge.exe",
+        "adobe bridge.exe",
+        "dimension.exe",
+        "substance 3d painter.exe",
+        "substance3dpainter.exe",
+        "substance 3d designer.exe",
+        "substance3ddesigner.exe",
+        "creative cloud.exe",
+        "creative cloud helper.exe",
+        "creative cloud ui helper.exe",
+        "ccxprocess.exe",
+        "coresync.exe",
+        "core sync.exe",
+        "adobeipcbroker.exe",
+        "adobe desktop service.exe",
+        "adobenotificationclient.exe",
+        "adobecollabsync.exe",
+        "adobegcclient.exe",
+        "acrobat.exe",
+        "acrocef.exe",
+        "acrotray.exe",
+        "armsvc.exe",
+        "acad.exe",
+        "acadlt.exe",
+        "autocad.exe",
+        "revit.exe",
+        "revitworker.exe",
+        "inventor.exe",
+        "fusion360.exe",
+        "fusionlauncher.exe",
+        "maya.exe",
+        "maya.bin",
+        "3dsmax.exe",
+        "navisworks.exe",
+        "roamer.exe",
+        "civil3d.exe",
+        "recap.exe",
+        "recapviewer.exe",
+        "adskaccess.exe",
+        "autodeskaccess.exe",
+        "autodeskdesktopapp.exe",
+        "autodeskdesktopconnector.exe",
+        "desktopconnector.applications.tray.exe",
+        "desktopconnector.exe",
+        "adskidentitymanager.exe",
+        "ustation.exe",
+        "microstation.exe",
+        "openroadsdesigner.exe",
+        "openbridge.exe",
+        "openraildesigner.exe",
+        "opencitiesmap.exe",
+        "projectwise.exe",
+        "pwc.exe",
+        "connectionclient.exe",
+        "bentley.connectionclient.exe",
+        "bentleylicensingtool.exe",
+        "canva.exe",
+        "notion calendar.exe",
+        "notioncalendar.exe",
+        "grammarly.exe",
+        "grammarly-desktop-integration.exe",
+        "grammarly desktop.exe",
+        "microsoft loop.exe",
+        "loop.exe",
+        "todo.exe",
+        "msedge_proxy.exe",
+        "cursor.exe",
+        "windsurf.exe",
+        "copilot-language-server.exe",
+        "copilot.exe",
+        "pycharm.exe",
+        "webstorm.exe",
+        "idea.exe",
+        "rider.exe",
+        "datagrip.exe",
+        "clion.exe",
+        "goland.exe",
+        "rubymine.exe",
+        "davinci resolve.exe",
+        "resolve.exe",
+        "blackmagicrawspeedtest.exe",
+        "blender.exe",
+        "sketchup.exe",
+        "sketchupviewer.exe",
+        "figma.exe",
+        "figma agent.exe",
+        "lunacy.exe",
+        "affinity photo.exe",
+        "affinity designer.exe",
+        "affinity publisher.exe"
     };
 
     private static readonly string[] GamingRelatedNameTokens =
@@ -805,6 +910,26 @@ public static class SafetyRules
         "tiworker", "msmpeng", "sgrmbroker", "wudfhost", "wmiprvse", "spoolsv", "audiodg", "ctfmon",
         "conhost", "dllhost", "rundll32", "fontdrvhost", "dwm", "sihost", "shellhost", "shellexperiencehost",
         "startmenuexperiencehost", "taskhost", "winlogon", "wininit", "crashpad", "crashhandler", "werfault"
+    };
+
+
+    private static readonly string[] AggressiveNonGamingAppTokens =
+    {
+        // Creative/productivity suites
+        "adobe", "acrobat", "creativecloud", "ccxprocess", "photoshop", "illustrator", "indesign", "lightroom",
+        "premierepro", "afterfx", "mediaencoder", "audition", "substance3d", "core sync", "coresync",
+
+        // CAD, engineering and workstation suites
+        "autodesk", "autocad", "revit", "inventor", "fusion360", "navisworks", "civil3d", "3dsmax", "maya",
+        "adsk", "desktopconnector", "bentley", "microstation", "openroads", "openrail", "projectwise", "connectionclient",
+
+        // Office, collaboration, productivity and cloud sync
+        "office", "microsoft365", "onenote", "outlook", "excel", "winword", "powerpnt", "teams", "onedrive",
+        "sharepoint", "dropbox", "googledrive", "boxsync", "nextcloud", "slack", "zoom", "webex", "skype",
+
+        // Work/dev/design helpers
+        "visualstudio", "vscode", "githubdesktop", "gitkraken", "postman", "dockerdesktop", "jetbrains",
+        "cursor", "windsurf", "copilotlanguageserver", "figma", "canva", "grammarly", "notion"
     };
 
     public static bool IsBlocked(string processName)
@@ -864,8 +989,13 @@ public static class SafetyRules
             return false;
         }
 
-        // v0.5.27: do not auto-select unknown process names in Aggressive mode.
-        // Unknown apps remain manually selectable/reviewable, but Aggressive should stay deterministic and stable.
+        if (AggressiveNonGamingAppTokens.Any(token => compact.Contains(token.Replace(" ", string.Empty).Replace("-", string.Empty).Replace("_", string.Empty), StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        // v0.6.13: do not auto-select fully unknown process names in Aggressive mode.
+        // Unknown apps remain manually selectable/reviewable, but Aggressive can still catch known non-gaming suites by token.
         return false;
     }
 

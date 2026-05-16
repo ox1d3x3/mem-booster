@@ -1,28 +1,19 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo Verifying Mem-Booster source with dotnet...
-echo.
-dotnet --info
-if errorlevel 1 goto :fail
 
-echo.
-echo Restoring packages...
-dotnet restore src\MemBooster\MemBooster.csproj
-if errorlevel 1 goto :fail
+echo Verifying project structure...
+if not exist "src\MemBooster\MemBooster.csproj" (
+  echo Missing project file.
+  exit /b 1
+)
 
-echo.
-echo Building Release...
-dotnet build src\MemBooster\MemBooster.csproj -c Release --no-restore
-if errorlevel 1 goto :fail
+dotnet --version
+if errorlevel 1 (
+  echo dotnet was not found. Install the .NET 8 SDK and Visual Studio 2022 with Windows App SDK tooling.
+  exit /b 1
+)
 
-echo.
-echo Verify build passed.
-pause
-exit /b 0
-
-:fail
-echo.
-echo Verify build failed. Copy the error output and send it back.
-pause
-exit /b 1
+echo Building Debug x64...
+dotnet build "src\MemBooster\MemBooster.csproj" -c Debug -p:Platform=x64
+exit /b %errorlevel%

@@ -1,142 +1,55 @@
-using System.IO;
-using System.Text;
-using System.Windows;
-using System.Windows.Threading;
+using Microsoft.UI.Xaml;
+using MemBooster.Services;
 
 namespace MemBooster;
 
 public partial class App : Application
 {
-    private const long MaxStartupLogBytes = 1024L * 1024L;
-    private const string AppVersion = "0.5.27";
+    private Window? _window;
+    private readonly string _appDataDirectory;
+    private readonly string _startupLogPath;
 
-    public static string AppDataDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Mem-Booster");
-
-    public static string StartupLogPath => Path.Combine(AppDataDirectory, "logs", "startup.log");
-
-    protected override void OnStartup(StartupEventArgs e)
+    public App()
     {
-        RegisterGlobalExceptionHandlers();
-        base.OnStartup(e);
+        _appDataDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Mem-Booster");
+        Directory.CreateDirectory(_appDataDirectory);
+
+        var logDirectory = Path.Combine(_appDataDirectory, "logs");
+        Directory.CreateDirectory(logDirectory);
+        _startupLogPath = Path.Combine(logDirectory, "startup.log");
+
+        WriteStartupLog("Application startup requested. version=0.6.13 WinUI3");
+        InitializeComponent();
     }
 
-    private void App_Startup(object sender, StartupEventArgs e)
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         try
         {
-            WriteStartupLog($"Application startup requested. version={AppVersion}");
-            var mainWindow = new MainWindow();
-            MainWindow = mainWindow;
-            mainWindow.Show();
+            _window = new MainWindow();
+            _window.Activate();
             WriteStartupLog("Main window shown successfully.");
         }
         catch (Exception ex)
         {
-            HandleFatalStartupException(ex);
+            WriteStartupLog("Fatal startup exception" + Environment.NewLine + ex);
+            throw;
         }
     }
 
-    private static void RegisterGlobalExceptionHandlers()
-    {
-        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-        {
-            if (args.ExceptionObject is Exception ex)
-            {
-                WriteStartupLog("Unhandled domain exception", ex);
-            }
-            else
-            {
-                WriteStartupLog($"Unhandled domain exception: {args.ExceptionObject}");
-            }
-        };
-
-        Current.DispatcherUnhandledException += (_, args) =>
-        {
-            WriteStartupLog("Unhandled UI exception", args.Exception);
-            MessageBox.Show(
-                "Mem-Booster hit an unexpected UI error.\n\n" +
-                args.Exception.Message +
-                "\n\nA diagnostic log was written here:\n" + StartupLogPath,
-                "Mem-Booster Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-            args.Handled = true;
-        };
-
-        TaskScheduler.UnobservedTaskException += (_, args) =>
-        {
-            WriteStartupLog("Unhandled task exception", args.Exception);
-            args.SetObserved();
-        };
-    }
-
-    private static void HandleFatalStartupException(Exception ex)
-    {
-        WriteStartupLog("Fatal startup exception", ex);
-        MessageBox.Show(
-            "Mem-Booster could not start.\n\n" +
-            ex.Message +
-            "\n\nA diagnostic log was written here:\n" + StartupLogPath,
-            "Mem-Booster Startup Error",
-            MessageBoxButton.OK,
-            MessageBoxImage.Error);
-        Current.Shutdown(1);
-    }
-
-    public static void WriteStartupLog(string message, Exception? exception = null)
+    private void WriteStartupLog(string message)
     {
         try
         {
-            var logDirectory = Path.GetDirectoryName(StartupLogPath);
-            if (!string.IsNullOrWhiteSpace(logDirectory))
-            {
-                Directory.CreateDirectory(logDirectory);
-            }
-
-            var builder = new StringBuilder();
-            builder.Append('[').Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")).Append("] ").AppendLine(message);
-            if (exception is not null)
-            {
-                builder.AppendLine(exception.ToString());
-            }
-
-            RotateStartupLogIfNeeded();
-            File.AppendAllText(StartupLogPath, builder.ToString());
+            File.AppendAllText(
+                _startupLogPath,
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
         }
         catch
         {
-            // Logging must never stop the app from opening.
+            // Startup logging must never prevent app launch.
         }
     }
-    private static void RotateStartupLogIfNeeded()
-    {
-        try
-        {
-            if (!File.Exists(StartupLogPath))
-            {
-                return;
-            }
-
-            var info = new FileInfo(StartupLogPath);
-            if (info.Length < MaxStartupLogBytes)
-            {
-                return;
-            }
-
-            var archivePath = StartupLogPath + ".old";
-            if (File.Exists(archivePath))
-            {
-                File.Delete(archivePath);
-            }
-
-            File.Move(StartupLogPath, archivePath);
-        }
-        catch
-        {
-            // Startup log rotation must never stop the app from opening.
-        }
-    }
-
 }

@@ -14,7 +14,7 @@ public sealed class ProcessGroup : INotifyPropertyChanged
     private string _riskLabel = "Low";
     private string _riskDescription = string.Empty;
 
-    public string ExeName { get; }
+    public string ExeName { get; set; }
 
     public string DisplayName
     {
@@ -85,6 +85,11 @@ public sealed class ProcessGroup : INotifyPropertyChanged
     }
 
     public string MemoryText => FormatBytes(WorkingSetBytes);
+
+    public ProcessGroup()
+    {
+        ExeName = string.Empty;
+    }
 
     public ProcessGroup(string exeName)
     {

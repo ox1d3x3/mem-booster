@@ -1,0 +1,39 @@
+Mem-Booster WinUI 3 v0.6.13 static review
+==========================================
+
+Fixes included:
+- Added explicit AppWindow.SetIcon() so the top-left window icon uses Assets\mem-booster.ico.
+- Kept ApplicationIcon in the project for the published EXE icon.
+- Reworked the theme button into a clean animated Dark/Light toggle.
+- Added lightweight manual thumb animation for a smoother sun/moon transition.
+- Added selection-sync guard in UpdateSelectionSummary to avoid unnecessary nested property-change updates.
+
+Checks performed:
+- Project/App/MainWindow XML parse
+- XAML event handler matching
+- Theme toggle XAML/code token scan
+- AppWindow icon code scan
+- ApplicationIcon property scan
+- Asset existence scan
+- Selection synchronisation guard scan
+- UseWindowsForms/System.Windows.Forms scan
+- Windows.Storage.Pickers scan
+- Window.Resources scan
+- Grid/StackPanel Padding scan
+- ListView invalid WPF-style border property scan
+- Native dialog COM pattern scan
+- SelectedAppItem record/init-only scan
+- ProcessGroup metadata safety scan
+- ProfileService constructor mismatch scan
+- DiagnosticsService Collect signature scan
+- Basic C# brace balance
+- ZIP integrity
+
+Errors:
+None found by static checks
+
+Warnings:
+Old version text before review rewrite: STATIC_REVIEW.txt
+
+Important limitation:
+This environment cannot run Visual Studio's WinUI/XBF compiler. Visual Studio remains the final compile/publish test.

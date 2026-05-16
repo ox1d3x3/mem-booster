@@ -1,185 +1,88 @@
-# Mem-Booster by Ox1d3x3
+# Mem-Booster by Ox1d3x3 v0.6.13 WinUI 3
 
-Mem-Booster is a native Windows 11 utility designed to prepare your PC for a cleaner gaming session. It helps close selected non-gaming background apps, reduce unnecessary background activity, and optionally apply reversible Windows 11 gaming-session optimisations.
+This is the first WinUI 3 migration build of Mem-Booster.
 
-The goal is simple: free up system resources before gaming without using unsafe “debloat” methods that can break Windows, security tools, drivers, launchers, overlays, or anti-cheat systems.
+Mem-Booster is a native Windows 11 utility for preparing a cleaner gaming session. It helps close selected non-gaming background apps, apply optional reversible Windows 11 gaming-session settings, and keep logs for troubleshooting.
 
----
+## Why WinUI 3?
 
-## Features
+The v0.6.13 branch moves the UI from WPF to WinUI 3 for a more modern Windows 11 interface. The core process logic, safety rules, profiles, logging, Device Optimise logic and boost behaviour were kept close to the stable v0.5.x branch.
 
-- Native Windows 11 app built with .NET 8 WPF
-- Live system memory usage
-- Real-time running app list
-- Easy app selection and selected-apps panel
-- Local profiles and shareable XML profiles
-- Safe Select, Extreme Select, and Aggressive Select modes
-- Smart close first, with optional force-close behaviour
-- Optional Fast Boost mode
-- Reversible Windows 11 Device Optimise options
-- Dark and light theme support
-- GitHub update check
-- Logs and diagnostics for troubleshooting
+## Important note
 
----
+This is a migration build. It should be tested separately from the stable WPF build before replacing it.
 
 ## Requirements
 
-### To run the published app
+To run the published self-contained build:
 
-If you use the self-contained release build, no separate .NET runtime should be required.
+- Windows 11 x64
 
-If you build or run the framework-dependent version, install:
+To build from source:
 
-- **.NET 8 Desktop Runtime**
 - Windows 11
-
-### To build from source
-
-Install:
-
 - Visual Studio 2022
 - .NET 8 SDK
+- Windows App SDK / WinUI 3 tooling
 - .NET desktop development workload
 
----
+The project references:
 
-## How it works
+```text
+Microsoft.WindowsAppSDK
+```
 
-Mem-Booster scans running user-level apps and groups them by executable name. You can manually select apps, load a saved profile, or use one of the built-in selection modes.
+## How to use
 
-When you press **BOOST NOW**, Mem-Booster closes the selected apps and related process trees. It skips missing apps automatically and avoids protected Windows, driver, security, gaming, overlay, VPN, firewall, and anti-cheat related processes.
+1. Open Mem-Booster.
+2. The running app list is scanned once at startup.
+3. Select apps manually or use Safe Select, Extreme Select, or Aggressive Select.
+4. Review the Selected apps panel.
+5. Optional: choose Device Optimise and select the Windows 11 settings you want.
+6. Click BOOST NOW.
+7. Restart Windows after a heavy boost if you want all background apps and helpers to return normally.
+8. Use Revert Device Optimise for Windows setting changes applied through Device Optimise.
 
-Mem-Booster does not attempt to restore closed apps automatically. After a heavy boost, restart Windows to return to a normal background-app state.
+## Manual refresh
 
----
+The running app list does not auto-refresh. This avoids the list changing while you are selecting apps.
 
-## Selection modes
+Use:
 
-### Safe Select
+```text
+Refresh Running Apps
+```
 
-Selects common background apps that are usually safe to close before gaming.
+when you want to rescan the current running app list.
 
-### Extreme Select
+## Safety approach
 
-Selects a larger known list of non-gaming apps, including browsers, Office/Microsoft 365 helpers, widgets, cloud sync apps, dev tools, download managers, and similar background software.
+Mem-Booster avoids core Windows, antivirus/security, VPN/firewall, GPU driver/control, RGB/fan-control, game launcher, anti-cheat, Discord, MSI Afterburner and RivaTuner related processes.
 
-### Aggressive Select
-
-Selects a stronger gaming-session cleanup list. This is intended for users who want a more focused gaming session and are comfortable closing more non-gaming background apps.
-
-Always review the **Selected apps** panel before pressing **BOOST NOW**.
-
----
-
-## Device Optimise
-
-Device Optimise provides selectable Windows 11 gaming-session settings. Each option can be reviewed before applying, and supported options can be reverted with **Revert Device Optimise**.
-
-Examples of supported optimisation areas:
-
-- Ultimate Performance power plan
-- Windows Game Mode
-- Xbox/Game DVR capture/background recording
-- Visual effects such as transparency and animations
-- Widgets taskbar button
-- Windows Search indexing pause
-- Optional advanced settings such as enhanced pointer precision, multimedia scheduler profile, and hardware-accelerated GPU scheduling
-
-Mem-Booster intentionally does not disable or modify antivirus, Defender, Memory Integrity/VBS, HPET, GPU drivers, game launchers, anti-cheat, Discord, MSI Afterburner, RivaTuner, VPNs, firewalls, RGB tools, or fan-control tools.
-
----
+Aggressive Select focuses on broad non-gaming software such as browsers, Office/Microsoft 365, Adobe/Creative Cloud, Autodesk/AutoCAD/Revit/Inventor/Fusion/Maya/3ds Max, Bentley/MicroStation/OpenRoads/ProjectWise, cloud sync tools, dev tools and productivity helpers.
 
 ## Disclaimer
 
-Mem-Booster is provided **as is**, with **no warranty** of any kind.
+Mem-Booster is provided as is, with no warranty of any kind.
 
-Use it at your own risk. The app is designed to avoid unsafe Windows modifications, but closing apps and changing system settings can still affect running programs, unsaved work, background sync, overlays, notifications, or other active tasks.
+Use it at your own risk. Always save your work before using BOOST NOW or Device Optimise.
 
-Always save your work before using **BOOST NOW** or **Device Optimise**. Restart Windows if you want to return to a normal background-app state.
+## Build
 
----
-
-## Basic usage
-
-1. Open **Mem-Booster**.
-2. Review the running apps list.
-3. Select apps manually or use **Safe Select**, **Extreme Select**, or **Aggressive Select**.
-4. Review the **Selected apps** panel.
-5. Optional: click **Device Optimise** and choose the Windows 11 settings you want to apply.
-6. Click **BOOST NOW**.
-7. After gaming, use **Revert Device Optimise** if you applied Device Optimise.
-8. Restart Windows if you want all closed background apps and services to return normally.
-
----
-
-## Profiles
-
-Mem-Booster supports local and shareable XML profiles.
-
-- **Save Local** saves your selected apps on your PC.
-- **Export XML** creates a shareable profile.
-- **Load XML** imports a profile from another user or system.
-
-If a profile contains apps that are not installed or not currently running, Mem-Booster skips them automatically.
-
----
-
-## Logs and diagnostics
-
-Logs are stored here:
-
-```text
-%APPDATA%\Mem-Booster\logs
-```
-
-Useful log files:
-
-```text
-mem-booster.log       Main activity log
-performance.log       Operation timings
-boost.log             Boost results
-device-optimise.log   Device Optimise and revert details
-startup.log           Startup crash log
-snapshots\*.csv       Before/after process snapshots
-```
-
-Use the **Logs** button to open the logs folder.
-
-Use the **Diagnostics** button, or run:
+Run:
 
 ```bat
-collect-diagnostics.bat
+verify-build.bat
 ```
 
-This creates a ZIP file on your Desktop containing logs, process snapshots, local profile, settings, and current process details.
-
----
-
-## Build from source
-
-Open:
-
-```text
-MemBooster.sln
-```
-
-To publish a self-contained x64 build, run:
+Publish self-contained x64:
 
 ```bat
 clean-publish-win-x64.bat
 ```
 
-The published executable will be created under:
+Output:
 
 ```text
-src\MemBooster\bin\Release\net8.0-windows10.0.17763.0\win-x64\publish\Mem-Booster.exe
+src\MemBooster\bin\Release\net8.0-windows10.0.19041.0\win-x64\publish\Mem-Booster.exe
 ```
-
----
-
-## Project
-
-Created by **Ox1d3x3**
-
-GitHub: `https://github.com/ox1d3x3/mem-booster`

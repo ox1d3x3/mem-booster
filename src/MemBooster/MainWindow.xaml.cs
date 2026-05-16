@@ -1,683 +1,307 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.IO;
-using System.Runtime.CompilerServices;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Media.Animation;
-using System.Windows.Threading;
 using MemBooster.Models;
 using MemBooster.Services;
-using Microsoft.Win32;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Windowing;
+using Windows.System;
+using WinRT.Interop;
 
 namespace MemBooster;
 
-public partial class MainWindow : Window, INotifyPropertyChanged
+public sealed partial class MainWindow : Window
 {
-    private readonly ProcessService _processService = new();
-    private readonly MemoryService _memoryService = new();
-    private readonly ProfileService _profileService = new();
-    private readonly UpdateService _updateService = new();
-    private readonly DiagnosticsService _diagnosticsService = new();
-    private readonly DeviceOptimizationService _deviceOptimizationService;
-    private readonly LoggerService _loggerService;
-    private readonly DispatcherTimer _memoryTimer;
-    private readonly DispatcherTimer _processTimer;
-    private readonly HashSet<string> _selectedProcessNames = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ICollectionView _processView;
+    private const string CurrentVersion = "0.6.13";
+    private const string RepositoryUrl = "https://github.com/ox1d3x3/mem-booster";
 
-    private bool _refreshRunning;
+    private readonly MemoryService _memoryService = new();
+    private readonly ProcessService _processService = new();
+    private readonly ProfileService _profileService;
+    private readonly LoggerService _loggerService;
+    private readonly UpdateService _updateService = new();
+    private readonly DiagnosticsService _diagnosticsService;
+    private readonly DeviceOptimizationService _deviceOptimizationService;
+
+    private readonly HashSet<string> _selectedProcessNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<ProcessGroup> _allProcessGroups = new();
+    private readonly Stopwatch _operationWatch = new();
+    private readonly string _appDataDirectory;
+
     private bool _syncingSelection;
     private bool _busyOperation;
-    private DateTime _suppressRowToggleUntilUtc = DateTime.MinValue;
-    private string _memoryText = "Loading...";
-    private double _memoryPercent;
-    private string _runningText = "0";
-    private string _selectedText = "0 active / 0 profile";
-    private string _profileStatus = "No profile loaded";
-    private string _statusText = "Ready";
+    private bool _isDarkTheme = true;
+    private bool _themeAnimationRunning;
     private string _searchText = string.Empty;
-    private readonly bool _isAdministrator;
-    private string _adminModeText = "Standard mode";
-    private bool _isRunAsAdminButtonEnabled = true;
-    private const string CurrentVersion = "0.5.27";
-    private string _currentTheme = "Dark";
-    private string _updateButtonText = "Updates";
-    private bool _checkingForUpdates;
-    private bool _isRevertDeviceOptimiseEnabled;
-    private string _operationProgressText = "Ready";
-    private string _operationElapsedText = string.Empty;
-    private double _operationProgressValue;
-    private Visibility _operationProgressVisibility = Visibility.Collapsed;
-    private readonly DispatcherTimer _progressTimer;
-    private Stopwatch? _operationStopwatch;
-    private UpdateCheckResult? _lastUpdateCheck;
+    private string? _pendingReleaseUrl;
 
     public ObservableCollection<ProcessGroup> ProcessGroups { get; } = new();
-
     public ObservableCollection<SelectedAppItem> SelectedApps { get; } = new();
-
-    public ICollectionView ProcessView => _processView;
-
-    public string MemoryText
-    {
-        get => _memoryText;
-        set => SetField(ref _memoryText, value);
-    }
-
-    public double MemoryPercent
-    {
-        get => _memoryPercent;
-        set => SetField(ref _memoryPercent, value);
-    }
-
-    public string RunningText
-    {
-        get => _runningText;
-        set => SetField(ref _runningText, value);
-    }
-
-    public string SelectedText
-    {
-        get => _selectedText;
-        set => SetField(ref _selectedText, value);
-    }
-
-    public string ProfileStatus
-    {
-        get => _profileStatus;
-        set => SetField(ref _profileStatus, value);
-    }
-
-    public string StatusText
-    {
-        get => _statusText;
-        set => SetField(ref _statusText, value);
-    }
-
-    public string AdminModeText
-    {
-        get => _adminModeText;
-        set => SetField(ref _adminModeText, value);
-    }
-
-    public bool IsRunAsAdminButtonEnabled
-    {
-        get => _isRunAsAdminButtonEnabled;
-        set => SetField(ref _isRunAsAdminButtonEnabled, value);
-    }
-
-    public string UpdateButtonText
-    {
-        get => _updateButtonText;
-        set => SetField(ref _updateButtonText, value);
-    }
-
-
-    public bool IsRevertDeviceOptimiseEnabled
-    {
-        get => _isRevertDeviceOptimiseEnabled;
-        set => SetField(ref _isRevertDeviceOptimiseEnabled, value);
-    }
-
-    public string OperationProgressText
-    {
-        get => _operationProgressText;
-        set => SetField(ref _operationProgressText, value);
-    }
-
-    public string OperationElapsedText
-    {
-        get => _operationElapsedText;
-        set => SetField(ref _operationElapsedText, value);
-    }
-
-    public double OperationProgressValue
-    {
-        get => _operationProgressValue;
-        set => SetField(ref _operationProgressValue, value);
-    }
-
-    public Visibility OperationProgressVisibility
-    {
-        get => _operationProgressVisibility;
-        set => SetField(ref _operationProgressVisibility, value);
-    }
 
     public MainWindow()
     {
         InitializeComponent();
-        SetWindowIconSafely();
-        _deviceOptimizationService = new DeviceOptimizationService(_profileService.AppDataDirectory);
-        _loggerService = new LoggerService(_profileService.AppDataDirectory);
-        _isAdministrator = AdminService.IsCurrentProcessElevated();
-        _loggerService.Write($"Mem-Booster v{CurrentVersion} startup; elevated={_isAdministrator}; baseDirectory={AppContext.BaseDirectory}; appData={_profileService.AppDataDirectory}");
-        try
+
+        _profileService = new ProfileService();
+        _appDataDirectory = _profileService.AppDataDirectory;
+        Directory.CreateDirectory(_appDataDirectory);
+
+        _loggerService = new LoggerService(_appDataDirectory);
+        _diagnosticsService = new DiagnosticsService();
+        _deviceOptimizationService = new DeviceOptimizationService(_appDataDirectory);
+
+        ProcessesList.ItemsSource = ProcessGroups;
+        SelectedList.ItemsSource = SelectedApps;
+
+        ApplyTheme(_profileService.LoadThemePreference(), animate: false);
+        ApplyWindowIcon();
+        ApplyAdminState();
+
+        var localProfile = _profileService.LoadLocalProfile();
+        foreach (var name in localProfile.ExecutableNames)
         {
-            _profileService.ClearRestoreSession();
-            _loggerService.Write("Legacy restore session cleared. Mem-Booster now recommends restarting Windows after boosting instead of reopening apps automatically.");
+            _selectedProcessNames.Add(SafetyRules.NormaliseProcessName(name));
         }
-        catch (Exception ex)
+
+        ProfileStatusTextBlock.Text = _selectedProcessNames.Count > 0
+            ? $"Loaded local profile with {_selectedProcessNames.Count} app(s)."
+            : "No saved profile loaded.";
+
+        _profileService.ClearRestoreSession();
+        RevertDeviceOptimiseButton.IsEnabled = _deviceOptimizationService.HasActiveState();
+
+        RootGrid.Loaded += async (_, _) =>
         {
-            _loggerService.Write($"Could not clear legacy restore session: {ex.Message}");
-        }
-        AdminModeText = _isAdministrator ? "Administrator mode" : "Standard mode";
-        IsRunAsAdminButtonEnabled = !_isAdministrator;
-        ApplySavedTheme();
-
-        _processView = CollectionViewSource.GetDefaultView(ProcessGroups);
-        _processView.Filter = FilterProcess;
-        _processView.SortDescriptions.Add(new SortDescription(nameof(ProcessGroup.WorkingSetBytes), ListSortDirection.Descending));
-        _processView.SortDescriptions.Add(new SortDescription(nameof(ProcessGroup.DisplayName), ListSortDirection.Ascending));
-
-        DataContext = this;
-
-        LoadLocalProfileQuietly();
-        UpdateDeviceOptimiseButtonState();
-        UpdateMemoryInfo();
-
-        _memoryTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _memoryTimer.Tick += (_, _) => UpdateMemoryInfo();
-
-        _processTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
-        _processTimer.Tick += async (_, _) =>
-        {
-            if (!_busyOperation && AutoRefreshCheckBox.IsChecked == true && !ProcessesGrid.IsKeyboardFocusWithin)
+            await RefreshProcessesAsync("Initial load", true);
+            _ = Task.Run(async () =>
             {
-                await RefreshProcessesAsync();
-            }
-        };
-
-        _progressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
-        _progressTimer.Tick += (_, _) => UpdateOperationElapsedText();
-
-        Loaded += async (_, _) =>
-        {
-            await RunInitialLoadAsync();
+                await Task.Delay(1500);
+                await CheckUpdatesAsync(silent: true);
+            });
         };
     }
 
-
-    private void SetWindowIconSafely()
+    private void ApplyAdminState()
     {
-        try
-        {
-            Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/mem-booster.ico", UriKind.Absolute));
-        }
-        catch (Exception ex)
-        {
-            App.WriteStartupLog("Window icon could not be loaded. Continuing without custom window icon.", ex);
-        }
+        var elevated = AdminService.IsCurrentProcessElevated();
+        AdminModeTextBlock.Text = elevated ? "Administrator mode" : "Standard mode";
+        RunAsAdminButton.IsEnabled = !elevated;
     }
 
-    private void ApplySavedTheme()
+    private void ApplyTheme(string theme, bool animate = false)
     {
-        var savedTheme = _profileService.LoadThemePreference();
-        ApplyTheme(savedTheme, animateToggle: false);
-    }
+        _isDarkTheme = !string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase);
+        var requestedTheme = _isDarkTheme ? ElementTheme.Dark : ElementTheme.Light;
+        RootBorder.RequestedTheme = requestedTheme;
+        RootGrid.RequestedTheme = requestedTheme;
+        ToolTipService.SetToolTip(ThemeToggleButton, _isDarkTheme ? "Switch to light theme" : "Switch to dark theme");
 
-    private void ThemeToggleButton_Click(object sender, RoutedEventArgs e)
-    {
-        using var operation = _loggerService.BeginOperation("ThemeToggle", $"currentTheme={_currentTheme}");
-        e.Handled = true;
-        SuppressRowToggle(650);
-
-        var processTimer = _processTimer;
-        var wasProcessTimerRunning = processTimer.IsEnabled;
-        if (wasProcessTimerRunning)
+        if (animate)
         {
-            processTimer.Stop();
-        }
-
-        try
-        {
-            var nextTheme = string.Equals(_currentTheme, "Light", StringComparison.OrdinalIgnoreCase)
-                ? "Dark"
-                : "Light";
-
-            ApplyTheme(nextTheme, animateToggle: true);
-            operation.Checkpoint($"Theme applied: {nextTheme}");
-
-            try
-            {
-                _profileService.SaveThemePreference(_currentTheme);
-            }
-            catch
-            {
-                // Theme preference is convenience-only. Do not interrupt the user if saving fails.
-            }
-        }
-        finally
-        {
-            if (wasProcessTimerRunning && AutoRefreshCheckBox.IsChecked == true && !_busyOperation)
-            {
-                processTimer.Start();
-            }
-        }
-    }
-
-    private void ApplyTheme(string theme, bool animateToggle = false)
-    {
-        var light = string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase);
-        _currentTheme = light ? "Light" : "Dark";
-
-        if (light)
-        {
-            SetBrush("BackgroundBrush", "#F4F7FB");
-            SetBrush("HeaderBrush", "#FFFFFF");
-            SetBrush("PanelBrush", "#FFFFFF");
-            SetBrush("CardBrush", "#FFFFFF");
-            SetBrush("CardAltBrush", "#F7FAFD");
-            SetBrush("BorderBrushSoft", "#D8E0EC");
-            SetBrush("TextBrush", "#101827");
-            SetBrush("TextMutedBrush", "#526071");
-            SetBrush("AccentBrush", "#0E9F6E");
-            SetBrush("AccentBlueBrush", "#2563EB");
-            SetBrush("DangerBrush", "#DC2626");
-            SetBrush("ButtonBrush", "#EEF3FA");
-            SetBrush("ButtonHoverBrush", "#E1EAF6");
-            SetBrush("InputBrush", "#F8FAFC");
-            SetBrush("DataGridHeaderBrush", "#EEF3FA");
-            SetBrush("DataGridRowBrush", "#FFFFFF");
-            SetBrush("DataGridAltRowBrush", "#F8FAFC");
-            SetBrush("DataGridGridBrush", "#E2E8F0");
-            SetBrush("BoostButtonBrush", "#0E9F6E");
-            SetBrush("BoostButtonBorderBrush", "#0E9F6E");
-            SetBrush("LogoPanelBrush", "#F8FAFC");
+            _ = AnimateThemeToggleAsync(_isDarkTheme);
         }
         else
         {
-            SetBrush("BackgroundBrush", "#090D14");
-            SetBrush("HeaderBrush", "#0D1320");
-            SetBrush("PanelBrush", "#101722");
-            SetBrush("CardBrush", "#151D2A");
-            SetBrush("CardAltBrush", "#182231");
-            SetBrush("BorderBrushSoft", "#253247");
-            SetBrush("TextBrush", "#EEF5FF");
-            SetBrush("TextMutedBrush", "#9DAABE");
-            SetBrush("AccentBrush", "#28D17C");
-            SetBrush("AccentBlueBrush", "#48A6FF");
-            SetBrush("DangerBrush", "#FF5C7A");
-            SetBrush("ButtonBrush", "#202B3D");
-            SetBrush("ButtonHoverBrush", "#2A3850");
-            SetBrush("InputBrush", "#0D1420");
-            SetBrush("DataGridHeaderBrush", "#172033");
-            SetBrush("DataGridRowBrush", "#111925");
-            SetBrush("DataGridAltRowBrush", "#0F1722");
-            SetBrush("DataGridGridBrush", "#1D293B");
-            SetBrush("BoostButtonBrush", "#123D2B");
-            SetBrush("BoostButtonBorderBrush", "#28D17C");
-            SetBrush("LogoPanelBrush", "#0B111D");
+            SetThemeToggleVisual(_isDarkTheme);
         }
-
-        Background = (Brush)Resources["BackgroundBrush"];
-        Foreground = (Brush)Resources["TextBrush"];
-        UpdateThemeToggle(light, animateToggle);
     }
 
-    private void UpdateThemeToggle(bool light, bool animate)
+    private void SetThemeToggleVisual(bool dark)
     {
-        if (ThemeIconPath is null || ThemeToggleButton is null)
+        ThemeThumbTranslate.X = dark ? 0 : 20;
+        ThemeIconText.Text = dark ? "☾" : "☀";
+        ThemeLabelText.Text = dark ? "Dark" : "Light";
+        ThemeIconText.Opacity = 1;
+        ThemeThumb.Opacity = 1;
+    }
+
+    private async Task AnimateThemeToggleAsync(bool dark)
+    {
+        if (_themeAnimationRunning)
         {
+            SetThemeToggleVisual(dark);
             return;
         }
 
-        var sunGeometry = "M10,3 A7,7 0 1 1 10,17 A7,7 0 1 1 10,3 M10,0.5 L10,2.3 M10,17.7 L10,19.5 M0.5,10 L2.3,10 M17.7,10 L19.5,10 M3.1,3.1 L4.4,4.4 M15.6,15.6 L16.9,16.9 M16.9,3.1 L15.6,4.4 M4.4,15.6 L3.1,16.9";
-        var moonGeometry = "M18,13.5 C16.4,15.4 14,16.6 11.3,16.6 C6.4,16.6 2.4,12.6 2.4,7.7 C2.4,5.1 3.5,2.7 5.3,1 C5.1,1.8 5,2.6 5,3.4 C5,8.4 9,12.4 14,12.4 C15.4,12.4 16.8,12.1 18,11.4 C18.2,12.1 18.2,12.8 18,13.5 Z";
-
-        ThemeIconPath.Data = Geometry.Parse(light ? sunGeometry : moonGeometry);
-        ThemeIconPath.Fill = light ? Brushes.Transparent : (Brush)Resources["AccentBrush"];
-        ThemeIconPath.Stroke = (Brush)Resources["AccentBrush"];
-        ThemeIconPath.StrokeThickness = light ? 1.8 : 1.6;
-        ThemeToggleButton.ToolTip = light ? "Switch to dark theme" : "Switch to light theme";
-
-        if (!animate)
-        {
-            if (ThemeIconScale is not null)
-            {
-                ThemeIconScale.ScaleX = 1;
-                ThemeIconScale.ScaleY = 1;
-            }
-            if (ThemeIconRotate is not null)
-            {
-                ThemeIconRotate.Angle = light ? 0 : -18;
-            }
-            return;
-        }
-
-        var easing = new CubicEase { EasingMode = EasingMode.EaseOut };
-        var duration = TimeSpan.FromMilliseconds(180);
-
-        if (ThemeIconRotate is not null)
-        {
-            ThemeIconRotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(light ? 0 : -18, duration)
-            {
-                EasingFunction = easing
-            });
-        }
-
-        if (ThemeIconScale is not null)
-        {
-            ThemeIconScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.85, 1, duration)
-            {
-                EasingFunction = easing
-            });
-            ThemeIconScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.85, 1, duration)
-            {
-                EasingFunction = easing
-            });
-        }
-    }
-
-    private void SetBrush(string resourceKey, string hex)
-    {
-        var colour = (Color)ColorConverter.ConvertFromString(hex);
-
-        // Some WPF brushes can be frozen/read-only once loaded from XAML or referenced by styles.
-        // Replacing the resource keeps DynamicResource bindings working and avoids startup crashes.
-        Resources[resourceKey] = new SolidColorBrush(colour);
-    }
-
-    private async Task RunInitialLoadAsync()
-    {
-        using var operation = _loggerService.BeginOperation("InitialLoad", $"version={CurrentVersion}; selected={_selectedProcessNames.Count}");
-        SetBusyState(true, "Loading Mem-Booster...");
-        ShowOperationProgress("Starting Mem-Booster...", 5);
+        _themeAnimationRunning = true;
 
         try
         {
-            await Dispatcher.Yield(DispatcherPriority.Background);
-            UpdateOperationProgress("Scanning running apps...", 25);
-            await RefreshProcessesAsync(force: true, showProgress: true, progressContext: "Initial load");
-            UpdateOperationProgress($"Loaded {ProcessGroups.Count} running app groups.", 90);
-            operation.Checkpoint($"Initial refresh complete; groups={ProcessGroups.Count}; selected={_selectedProcessNames.Count}");
+            var start = ThemeThumbTranslate.X;
+            var end = dark ? 0d : 20d;
+            var iconChanged = false;
 
-            _memoryTimer.Start();
-            _processTimer.Start();
-            UpdateOperationProgress("Ready", 100);
-            StatusText = $"Ready. Loaded {ProcessGroups.Count} running app groups.";
-
-            _ = Task.Run(async () =>
+            for (var frame = 1; frame <= 16; frame++)
             {
-                try
+                var t = frame / 16d;
+                var eased = 1d - Math.Pow(1d - t, 3d);
+                ThemeThumbTranslate.X = start + ((end - start) * eased);
+
+                if (!iconChanged && t >= 0.45d)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(8));
-                    await Dispatcher.InvokeAsync(() => { _ = CheckForUpdatesAsync(silent: true); });
+                    ThemeIconText.Text = dark ? "☾" : "☀";
+                    ThemeLabelText.Text = dark ? "Dark" : "Light";
+                    iconChanged = true;
                 }
-                catch
-                {
-                    // Update checks must never affect startup smoothness.
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"Initial load failed: {ex.Message}";
-            _loggerService.Write($"Initial load failed: {ex}");
+
+                var distanceFromMiddle = Math.Abs(t - 0.5d) * 2d;
+                ThemeIconText.Opacity = 0.45d + (0.55d * distanceFromMiddle);
+                await Task.Delay(10);
+            }
+
+            SetThemeToggleVisual(dark);
         }
         finally
         {
-            await HideOperationProgressAfterDelayAsync(450);
-            SetBusyState(false);
+            _themeAnimationRunning = false;
         }
     }
 
-    private void ShowOperationProgress(string text, double value = 0)
-    {
-        _operationStopwatch = Stopwatch.StartNew();
-        OperationProgressVisibility = Visibility.Visible;
-        OperationProgressText = text;
-        OperationProgressValue = Math.Clamp(value, 0, 100);
-        OperationElapsedText = "0.0s";
-        if (!_progressTimer.IsEnabled)
-        {
-            _progressTimer.Start();
-        }
-        _loggerService.Write($"Progress shown: {text}; value={OperationProgressValue:0}");
-    }
-
-    private void UpdateOperationProgress(string text, double value)
-    {
-        OperationProgressText = text;
-        OperationProgressValue = Math.Clamp(value, 0, 100);
-        StatusText = text;
-        UpdateOperationElapsedText();
-        _loggerService.Write($"Progress update: {text}; value={OperationProgressValue:0}; elapsed={OperationElapsedText}");
-    }
-
-    private void UpdateOperationElapsedText()
-    {
-        if (_operationStopwatch is null)
-        {
-            OperationElapsedText = string.Empty;
-            return;
-        }
-
-        OperationElapsedText = $"{_operationStopwatch.Elapsed.TotalSeconds:0.0}s";
-    }
-
-    private async Task HideOperationProgressAfterDelayAsync(int delayMs = 300)
-    {
-        if (delayMs > 0)
-        {
-            await Task.Delay(delayMs);
-        }
-
-        _progressTimer.Stop();
-        _operationStopwatch?.Stop();
-        _operationStopwatch = null;
-        OperationProgressVisibility = Visibility.Collapsed;
-        OperationProgressText = "Ready";
-        OperationProgressValue = 0;
-        OperationElapsedText = string.Empty;
-    }
-
-    private bool ShowTimedWarning(string title, string message, string confirmButtonText, int delaySeconds = 5)
-    {
-        _loggerService.Write($"Timed warning shown: title={title}; delaySeconds={delaySeconds}");
-        var dialog = new TimedWarningDialog(title, message, confirmButtonText, delaySeconds)
-        {
-            Owner = this
-        };
-
-        var accepted = dialog.ShowDialog() == true;
-        _loggerService.Write($"Timed warning result: title={title}; accepted={accepted}");
-        return accepted;
-    }
-
-    private void LoadLocalProfileQuietly()
+    private void ApplyWindowIcon()
     {
         try
         {
-            var profile = _profileService.LoadLocalProfile();
-            _selectedProcessNames.Clear();
-            var dropped = 0;
-            foreach (var name in profile.ExecutableNames.Select(SafetyRules.NormaliseProcessName))
+            var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "mem-booster.ico");
+            if (!File.Exists(iconPath))
             {
-                if (SafetyRules.IsAutoLoadProfileAllowed(name))
-                {
-                    _selectedProcessNames.Add(name);
-                }
-                else
-                {
-                    dropped++;
-                    _loggerService.Write($"Local profile sanitised legacy/unsafe entry: {name}");
-                }
+                _loggerService.Write($"Window icon missing: {iconPath}");
+                return;
             }
 
-            ProfileStatus = _selectedProcessNames.Count > 0
-                ? dropped > 0
-                    ? $"Loaded local profile: {_selectedProcessNames.Count} entries, {dropped} legacy/unsafe removed"
-                    : $"Loaded local profile: {_selectedProcessNames.Count} entries"
-                : "No local profile yet. Select apps and save.";
+            var hwnd = WindowNative.GetWindowHandle(this);
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+            var appWindow = AppWindow.GetFromWindowId(windowId);
+            appWindow.SetIcon(iconPath);
+            _loggerService.Write($"Window icon applied: {iconPath}");
         }
         catch (Exception ex)
         {
-            ProfileStatus = $"Local profile could not be loaded: {ex.Message}";
+            _loggerService.Write($"Failed to apply window icon: {ex}");
         }
     }
 
-
-    private void UpdateDeviceOptimiseButtonState()
+    private async Task RefreshProcessesAsync(string context, bool showProgress)
     {
-        try
-        {
-            IsRevertDeviceOptimiseEnabled = _deviceOptimizationService.HasActiveState();
-        }
-        catch
-        {
-            IsRevertDeviceOptimiseEnabled = false;
-        }
-    }
-
-    private HashSet<string> GetSaveableProfileNames()
-    {
-        return _selectedProcessNames
-            .Select(SafetyRules.NormaliseProcessName)
-            .Where(SafetyRules.IsAutoLoadProfileAllowed)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-    }
-
-    private async Task RefreshProcessesAsync(bool force = false, bool showProgress = false, string? progressContext = null)
-    {
-        if (_refreshRunning)
+        if (_busyOperation)
         {
             return;
         }
 
-        _refreshRunning = true;
-        var refreshWatch = Stopwatch.StartNew();
-        using var operation = _loggerService.BeginOperation("RefreshProcesses", $"force={force}; selected={_selectedProcessNames.Count}; progress={showProgress}; context={progressContext ?? "auto"}");
-        StatusText = "Refreshing running apps...";
-        if (showProgress)
-        {
-            if (OperationProgressVisibility != Visibility.Visible)
-            {
-                ShowOperationProgress(progressContext ?? "Refreshing running apps...", 10);
-            }
-            else
-            {
-                UpdateOperationProgress(progressContext ?? "Refreshing running apps...", Math.Max(OperationProgressValue, 10));
-            }
-        }
-
+        _busyOperation = true;
+        var watch = Stopwatch.StartNew();
         try
         {
             if (showProgress)
             {
-                UpdateOperationProgress("Reading process snapshot...", 25);
+                ShowProgress($"{context}: scanning running apps...", 15);
             }
 
-            var snapshots = await Task.Run(() => _processService.GetProcessGroups(message => operation.Checkpoint(message)));
+            RefreshMemory();
 
-            if (showProgress)
-            {
-                UpdateOperationProgress($"Updating UI with {snapshots.Count} app group(s)...", 65);
-                await Dispatcher.Yield(DispatcherPriority.Background);
-            }
-            var incomingNames = snapshots.Select(s => s.ExeName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var snapshots = await Task.Run(() => _processService.GetProcessGroups());
+            var ordered = snapshots
+                .Select(s =>
+                {
+                    var group = new ProcessGroup(s.ExeName);
+                    group.UpdateFrom(s, _selectedProcessNames.Contains(s.ExeName));
+                    group.PropertyChanged += ProcessGroup_PropertyChanged;
+                    return group;
+                })
+                .OrderByDescending(g => g.WorkingSetBytes)
+                .ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             _syncingSelection = true;
             try
             {
-                for (var i = ProcessGroups.Count - 1; i >= 0; i--)
+                foreach (var group in _allProcessGroups)
                 {
-                    if (!incomingNames.Contains(ProcessGroups[i].ExeName))
-                    {
-                        ProcessGroups[i].PropertyChanged -= ProcessGroup_PropertyChanged;
-                        ProcessGroups.RemoveAt(i);
-                    }
+                    group.PropertyChanged -= ProcessGroup_PropertyChanged;
                 }
 
-                var existing = ProcessGroups.ToDictionary(p => p.ExeName, StringComparer.OrdinalIgnoreCase);
-
-                foreach (var snapshot in snapshots)
-                {
-                    if (!existing.TryGetValue(snapshot.ExeName, out var group))
-                    {
-                        group = new ProcessGroup(snapshot.ExeName);
-                        group.UpdateFrom(snapshot, _selectedProcessNames.Contains(snapshot.ExeName));
-                        group.PropertyChanged += ProcessGroup_PropertyChanged;
-                        ProcessGroups.Add(group);
-                    }
-                    else
-                    {
-                        group.UpdateFrom(snapshot, _selectedProcessNames.Contains(snapshot.ExeName));
-                    }
-                }
+                _allProcessGroups.Clear();
+                _allProcessGroups.AddRange(ordered);
             }
             finally
             {
                 _syncingSelection = false;
             }
 
-            RunningText = ProcessGroups.Count.ToString();
+            ApplyFilter();
             UpdateSelectionSummary();
-            EndGridEditTransaction();
-            SafeRefreshProcessView();
-            refreshWatch.Stop();
-            StatusText = $"Updated {DateTime.Now:T} in {refreshWatch.ElapsedMilliseconds} ms";
+
+            watch.Stop();
+            StatusTextBlock.Text = $"Running apps refreshed in {watch.ElapsedMilliseconds} ms. Manual refresh only.";
+            _loggerService.Write($"WinUI refresh complete: context={context}; groups={_allProcessGroups.Count}; visible={ProcessGroups.Count}; selected={_selectedProcessNames.Count}; elapsedMs={watch.ElapsedMilliseconds}");
+
             if (showProgress)
             {
-                UpdateOperationProgress($"Loaded {ProcessGroups.Count} app groups in {refreshWatch.ElapsedMilliseconds} ms", 100);
+                ShowProgress($"Loaded {ProcessGroups.Count} app group(s)", 100);
+                await Task.Delay(300);
             }
-            operation.Checkpoint($"Refresh UI updated: visibleGroups={ProcessGroups.Count}; selected={_selectedProcessNames.Count}; elapsedMs={refreshWatch.ElapsedMilliseconds}");
         }
         catch (Exception ex)
         {
-            StatusText = $"Refresh failed: {ex.Message}";
-            _loggerService.Write($"Refresh failed: {ex}");
+            StatusTextBlock.Text = $"Refresh failed: {ex.Message}";
+            _loggerService.Write($"WinUI refresh failed: {ex}");
+            await ShowMessageAsync("Refresh failed", ex.Message);
         }
         finally
         {
-            _refreshRunning = false;
-            if (showProgress && !string.Equals(progressContext, "Initial load", StringComparison.OrdinalIgnoreCase) && !_busyOperation)
-            {
-                await HideOperationProgressAfterDelayAsync(250);
-            }
+            HideProgress();
+            _busyOperation = false;
         }
     }
 
-    private bool FilterProcess(object item)
+    private void ApplyFilter()
     {
-        if (item is not ProcessGroup process)
+        var query = _searchText.Trim();
+
+        ProcessGroups.Clear();
+
+        foreach (var group in _allProcessGroups)
         {
-            return false;
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                var match = group.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                            || group.ExeName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                            || group.RiskLabel.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+                if (!match)
+                {
+                    continue;
+                }
+            }
+
+            ProcessGroups.Add(group);
         }
 
-        if (string.IsNullOrWhiteSpace(_searchText))
-        {
-            return true;
-        }
+        ProcessCountTextBlock.Text = _allProcessGroups.Count.ToString();
+    }
 
-        return process.DisplayName.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
-            || process.ExeName.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
-            || process.RiskLabel.Contains(_searchText, StringComparison.OrdinalIgnoreCase);
+    private void RefreshMemory()
+    {
+        var info = _memoryService.GetMemoryInfo();
+        MemoryTextBlock.Text = info.Summary;
+        MemoryBar.Value = info.UsedPercent;
     }
 
     private void ProcessGroup_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (_syncingSelection || sender is not ProcessGroup process || e.PropertyName != nameof(ProcessGroup.IsSelected))
+        if (_syncingSelection || e.PropertyName != nameof(ProcessGroup.IsSelected) || sender is not ProcessGroup group)
         {
             return;
         }
 
-        if (process.IsSelected)
+        if (group.IsSelected)
         {
-            _selectedProcessNames.Add(process.ExeName);
-            _loggerService.Write($"Selection changed: {process.DisplayName} | {process.ExeName} | selected=True");
-            StatusText = $"Selected {process.DisplayName}.";
+            _selectedProcessNames.Add(group.ExeName);
         }
         else
         {
-            _selectedProcessNames.Remove(process.ExeName);
-            _loggerService.Write($"Selection changed: {process.DisplayName} | {process.ExeName} | selected=False");
-            StatusText = $"Removed {process.DisplayName}.";
+            _selectedProcessNames.Remove(group.ExeName);
         }
 
         UpdateSelectionSummary();
@@ -685,1085 +309,748 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void UpdateSelectionSummary()
     {
-        var activeMatches = ProcessGroups.Count(p => p.IsSelected);
-        SelectedText = $"{activeMatches} active / {_selectedProcessNames.Count} profile";
-
         SelectedApps.Clear();
-        foreach (var exeName in _selectedProcessNames.OrderBy(GetSelectedDisplayName, StringComparer.OrdinalIgnoreCase))
-        {
-            var running = ProcessGroups.FirstOrDefault(p => p.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase));
-            var displayName = running?.DisplayName ?? ToFriendlyFallbackName(exeName);
-            var state = running is null
-                ? "Not running"
-                : $"{running.ExeName} • {running.MemoryText}";
 
-            SelectedApps.Add(new SelectedAppItem(displayName, exeName, state));
-        }
-    }
-
-    private string GetSelectedDisplayName(string exeName)
-    {
-        return ProcessGroups.FirstOrDefault(p => p.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase))?.DisplayName
-            ?? ToFriendlyFallbackName(exeName);
-    }
-
-    private static string ToFriendlyFallbackName(string exeName)
-    {
-        var name = exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? exeName[..^4]
-            : exeName;
-
-        return string.Join(" ", name.Replace('_', ' ').Replace('-', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Select(part => part.Length <= 1 ? part.ToUpperInvariant() : char.ToUpperInvariant(part[0]) + part[1..]));
-    }
-
-    private void UpdateMemoryInfo()
-    {
-        try
-        {
-            var memory = _memoryService.GetMemoryInfo();
-            MemoryText = memory.Summary;
-            MemoryPercent = memory.UsedPercent;
-        }
-        catch
-        {
-            MemoryText = "Memory unavailable";
-            MemoryPercent = 0;
-        }
-    }
-
-    private async void RefreshButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        UpdateMemoryInfo();
-        await RefreshProcessesAsync(force: true, showProgress: true, progressContext: "Manual refresh");
-    }
-
-    private void SaveLocalButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        try
-        {
-            var saveableNames = GetSaveableProfileNames();
-            _profileService.SaveLocalProfile(saveableNames);
-            var dropped = _selectedProcessNames.Count - saveableNames.Count;
-            _loggerService.Write($"Local profile saved; entries={saveableNames.Count}; skippedUnsafeOrTemporary={dropped}");
-            ProfileStatus = dropped > 0
-                ? $"Saved local profile: {saveableNames.Count} entries, {dropped} temporary/unsafe skipped"
-                : $"Saved local profile: {saveableNames.Count} entries";
-            StatusText = "Local profile saved.";
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Save Local Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private void ExportXmlButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        if (_selectedProcessNames.Count == 0)
-        {
-            MessageBox.Show(this, "Select at least one app before exporting a profile.", "Nothing Selected", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        var dialog = new SaveFileDialog
-        {
-            Title = "Export Mem-Booster XML Profile",
-            Filter = "Mem-Booster XML profile (*.xml)|*.xml|All files (*.*)|*.*",
-            FileName = "gaming-boost-profile.xml",
-            AddExtension = true,
-            DefaultExt = ".xml"
-        };
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
-        }
-
-        try
-        {
-            var saveableNames = GetSaveableProfileNames();
-            var dropped = _selectedProcessNames.Count - saveableNames.Count;
-            _profileService.SaveProfile(dialog.FileName, new ProfileData("Gaming Boost", saveableNames));
-            _loggerService.Write($"XML profile exported; entries={saveableNames.Count}; skippedUnsafeOrTemporary={dropped}; path={dialog.FileName}");
-            ProfileStatus = dropped > 0
-                ? $"Exported XML profile: {saveableNames.Count} entries, {dropped} temporary/unsafe skipped"
-                : $"Exported XML profile: {saveableNames.Count} entries";
-            StatusText = $"Exported: {dialog.FileName}";
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Export Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private async void LoadXmlButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        var dialog = new OpenFileDialog
-        {
-            Title = "Load Mem-Booster XML Profile",
-            Filter = "Mem-Booster XML profile (*.xml)|*.xml|All files (*.*)|*.*",
-            CheckFileExists = true
-        };
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
-        }
-
-        try
-        {
-            var profile = _profileService.LoadProfile(dialog.FileName);
-            _selectedProcessNames.Clear();
-            var dropped = 0;
-            foreach (var name in profile.ExecutableNames.Select(SafetyRules.NormaliseProcessName))
-            {
-                if (SafetyRules.IsAutoLoadProfileAllowed(name))
-                {
-                    _selectedProcessNames.Add(name);
-                }
-                else
-                {
-                    dropped++;
-                    _loggerService.Write($"XML profile sanitised legacy/unsafe entry: {name}");
-                }
-            }
-
-            ApplySelectionToRunningRows();
-            _loggerService.WriteSelection($"LoadXml:{profile.Name}", _selectedProcessNames, ProcessGroups);
-            await RefreshProcessesAsync(force: true);
-            var activeMatches = ProcessGroups.Count(p => p.IsSelected);
-            ProfileStatus = dropped > 0
-                ? $"Loaded XML: {profile.Name}. {activeMatches} active matches, {_selectedProcessNames.Count - activeMatches} skipped/not running, {dropped} legacy/unsafe removed."
-                : $"Loaded XML: {profile.Name}. {activeMatches} active matches, {_selectedProcessNames.Count - activeMatches} skipped/not running.";
-            StatusText = "XML profile loaded.";
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Load XML Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private void SelectRecommendedButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        var matches = ProcessGroups.Where(p => p.CanSelect && p.IsRecommended).ToList();
-        _selectedProcessNames.Clear();
-        foreach (var process in matches)
-        {
-            _selectedProcessNames.Add(process.ExeName);
-        }
-
-        ApplySelectionToRunningRows();
-        _loggerService.WriteSelection("SafeSelect", _selectedProcessNames, ProcessGroups);
-        ProfileStatus = $"Safe list selected {matches.Count} running app(s). Gaming launchers, drivers, overlays, Discord and tuning tools are excluded.";
-        StatusText = "Safe list applied.";
-    }
-
-    private void ExtremeSelectButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        var matches = ProcessGroups
-            .Where(p => p.CanSelect && SafetyRules.IsExtremeRecommendedForGamingBoost(p.ExeName))
+        var selectedGroups = _allProcessGroups
+            .Where(g => _selectedProcessNames.Contains(g.ExeName))
+            .OrderByDescending(g => g.WorkingSetBytes)
+            .ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        _selectedProcessNames.Clear();
-        foreach (var process in matches)
+        foreach (var group in selectedGroups)
         {
-            _selectedProcessNames.Add(process.ExeName);
+            SelectedApps.Add(new SelectedAppItem(
+                group.DisplayName,
+                group.ExeName,
+                $"{group.ExeName} • {group.MemoryText} • {group.InstanceCount} instance(s)"));
         }
 
-        ApplySelectionToRunningRows();
-        _loggerService.WriteSelection("ExtremeSelect", _selectedProcessNames, ProcessGroups);
-        ProfileStatus = $"Extreme selected {matches.Count} running app(s). Non-running or missing apps are skipped automatically. Gaming launchers, drivers, overlays, Discord and tuning tools stay excluded.";
-        StatusText = "Extreme list applied.";
-    }
+        var active = selectedGroups.Count;
+        var total = _selectedProcessNames.Count;
+        var text = total == 0 ? "0 selected" : $"{active} active / {total} profile";
+        SelectedTextBlock.Text = text;
+        SelectedPanelTextBlock.Text = text;
 
-    private void AggressiveSelectButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        var matches = ProcessGroups
-            .Where(p => p.CanSelect && SafetyRules.IsAggressiveRecommendedForGamingBoost(p.ExeName))
-            .ToList();
-
-        _selectedProcessNames.Clear();
-        foreach (var process in matches)
-        {
-            _selectedProcessNames.Add(process.ExeName);
-        }
-
-        ApplySelectionToRunningRows();
-        _loggerService.WriteSelection("AggressiveSelect", _selectedProcessNames, ProcessGroups);
-        ProfileStatus = $"Aggressive selected {matches.Count} running app(s). Missing apps are skipped. Gaming, driver, overlay and core Windows processes stay excluded.";
-        StatusText = "Aggressive list applied. Review selected apps before boosting.";
-    }
-
-    private async void DeviceOptimiseButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        if (_busyOperation)
-        {
-            StatusText = "Please wait for the current operation to finish.";
-            return;
-        }
-
-        if (!_deviceOptimizationService.IsWindows11OrLater(out var osDescription))
-        {
-            MessageBox.Show(
-                this,
-                $"Device Optimise is built for Windows 11 only.\n\nDetected: {osDescription}",
-                "Windows 11 Required",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-            return;
-        }
-
-        if (!_isAdministrator)
-        {
-            var elevateChoice = MessageBox.Show(
-                this,
-                "Device Optimise needs administrator mode for the full Windows 11 gaming-session optimisation, including power plan and service control.\n\nRelaunch Mem-Booster as administrator now?",
-                "Administrator Required",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-
-            if (elevateChoice == MessageBoxResult.Yes)
-            {
-                RelaunchAsAdminAndExit();
-            }
-            else
-            {
-                StatusText = "Device Optimise cancelled. Administrator mode is required.";
-            }
-
-            return;
-        }
-
-        if (_deviceOptimizationService.HasActiveState())
-        {
-            MessageBox.Show(
-                this,
-                "Device Optimise is already active on this PC. Use Revert Device Optimise before applying it again.",
-                "Device Optimise Already Active",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            UpdateDeviceOptimiseButtonState();
-            return;
-        }
-
-        var selectionDialog = new DeviceOptimizationSelectionDialog(
-            "Device Optimise",
-            "Choose exactly which Windows 11 gaming-session optimisations you want. Recommended items are selected by default. Advanced or restart-required items show a warning. All listed items are captured before change and restored by Revert Device Optimise.\n\nMem-Booster will NOT disable antivirus/security, Memory Integrity/VBS, HPET, GPU drivers, network adapters, VPN/firewall tools, game launchers, anti-cheat, Discord, MSI Afterburner or RivaTuner.",
-            _deviceOptimizationService.GetAvailableOptions(),
-            "Apply Selected",
-            15)
-        {
-            Owner = this
-        };
-
-        if (selectionDialog.ShowDialog() != true)
-        {
-            StatusText = "Device Optimise cancelled.";
-            return;
-        }
-
-        var selectedDeviceOptionIds = selectionDialog.SelectedOptionIds.ToArray();
-        if (selectedDeviceOptionIds.Length == 0)
-        {
-            StatusText = "Device Optimise cancelled. No options selected.";
-            return;
-        }
-
-        var selectedDeviceOptions = _deviceOptimizationService.GetAvailableOptions()
-            .Where(option => selectedDeviceOptionIds.Contains(option.Id, StringComparer.OrdinalIgnoreCase))
-            .ToArray();
-        _loggerService.WriteDeviceOptimise("Device Optimise selected options: " + string.Join(", ", selectedDeviceOptions.Select(option => option.Name)));
-
-        _processTimer.Stop();
-        using var operation = _loggerService.BeginOperation("DeviceOptimise", $"version={CurrentVersion}; admin={_isAdministrator}");
-        SetBusyState(true, "Device Optimise running...");
-        ShowOperationProgress("Preparing Device Optimise...", 5);
-
-        try
-        {
-            var result = await Task.Run(() => _deviceOptimizationService.Apply(
-                selectedDeviceOptionIds,
-                message =>
-                {
-                    _loggerService.WriteDeviceOptimise(message);
-                    operation.Checkpoint(message);
-                },
-                (text, percent) => Dispatcher.Invoke(() => UpdateOperationProgress(text, percent))));
-
-            UpdateDeviceOptimiseButtonState();
-            UpdateOperationProgress("Refreshing after Device Optimise...", 92);
-            UpdateMemoryInfo();
-            await RefreshProcessesAsync(force: true, showProgress: true, progressContext: "Device Optimise refresh");
-            UpdateOperationProgress("Device Optimise complete.", 100);
-            StatusText = result.Summary + " Restart Windows to fully return to the normal background-app state.";
-            ProfileStatus = result.Summary;
-
-            if (!result.Success)
-            {
-                MessageBox.Show(this, result.Summary + "\n\nCheck Logs > device-optimise.log for details.", "Device Optimise Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Device Optimise Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            StatusText = "Device Optimise failed: " + ex.Message;
-            _loggerService.WriteDeviceOptimise("Device Optimise failed: " + ex);
-            _loggerService.Write("Device Optimise failed: " + ex);
-        }
-        finally
-        {
-            await HideOperationProgressAfterDelayAsync(600);
-            SetBusyState(false);
-            UpdateDeviceOptimiseButtonState();
-            if (AutoRefreshCheckBox.IsChecked == true)
-            {
-                _processTimer.Start();
-            }
-        }
-    }
-
-    private async void RevertDeviceOptimiseButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        if (_busyOperation)
-        {
-            StatusText = "Please wait for the current operation to finish.";
-            return;
-        }
-
-        if (!_deviceOptimizationService.HasActiveState())
-        {
-            MessageBox.Show(this, "No Device Optimise state was found on this PC.", "Nothing To Revert", MessageBoxButton.OK, MessageBoxImage.Information);
-            UpdateDeviceOptimiseButtonState();
-            return;
-        }
-
-        if (!_isAdministrator)
-        {
-            var elevateChoice = MessageBox.Show(
-                this,
-                "Revert Device Optimise needs administrator mode to restore the power plan and Windows Search service state.\n\nRelaunch Mem-Booster as administrator now?",
-                "Administrator Required",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-
-            if (elevateChoice == MessageBoxResult.Yes)
-            {
-                RelaunchAsAdminAndExit();
-            }
-            else
-            {
-                StatusText = "Revert Device Optimise cancelled. Administrator mode is required.";
-            }
-
-            return;
-        }
-
-        var appliedDeviceOptions = _deviceOptimizationService.GetAppliedOptions();
-        var appliedText = appliedDeviceOptions.Count > 0
-            ? string.Join("\n", appliedDeviceOptions.Select(option => "• " + option.Name + (option.RequiresRestart ? " (restart-related)" : string.Empty)))
-            : "• Captured settings from an older Mem-Booster version";
-
-        var confirm = ShowTimedWarning(
-            "⚠ Revert Device Optimise Warning",
-            "Mem-Booster will restore the Windows 11 settings captured before Device Optimise. Captured items:\n\n" +
-            appliedText +
-            "\n\nThis does not reopen apps closed by Boost Now. Restart Windows after a heavy boost to return to a clean normal background-app state, especially if you selected a restart-required optimisation.",
-            "Revert Device Optimise",
-            15);
-
-        if (!confirm)
-        {
-            StatusText = "Revert Device Optimise cancelled.";
-            return;
-        }
-
-        _processTimer.Stop();
-        using var operation = _loggerService.BeginOperation("RevertDeviceOptimise", $"version={CurrentVersion}; admin={_isAdministrator}");
-        SetBusyState(true, "Reverting Device Optimise...");
-        ShowOperationProgress("Preparing Device Optimise revert...", 5);
-
-        try
-        {
-            var result = await Task.Run(() => _deviceOptimizationService.Revert(
-                message =>
-                {
-                    _loggerService.WriteDeviceOptimise(message);
-                    operation.Checkpoint(message);
-                },
-                (text, percent) => Dispatcher.Invoke(() => UpdateOperationProgress(text, percent))));
-
-            UpdateDeviceOptimiseButtonState();
-            UpdateOperationProgress("Refreshing after revert...", 92);
-            UpdateMemoryInfo();
-            await RefreshProcessesAsync(force: true, showProgress: true, progressContext: "Device Optimise revert refresh");
-            UpdateOperationProgress("Device Optimise revert complete.", 100);
-            StatusText = result.Summary;
-            ProfileStatus = result.Summary;
-
-            if (!result.Success)
-            {
-                MessageBox.Show(this, result.Summary + "\n\nCheck Logs > device-optimise.log for details.", "Revert Device Optimise Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Revert Device Optimise Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            StatusText = "Revert Device Optimise failed: " + ex.Message;
-            _loggerService.WriteDeviceOptimise("Revert Device Optimise failed: " + ex);
-            _loggerService.Write("Revert Device Optimise failed: " + ex);
-        }
-        finally
-        {
-            await HideOperationProgressAfterDelayAsync(600);
-            SetBusyState(false);
-            UpdateDeviceOptimiseButtonState();
-            if (AutoRefreshCheckBox.IsChecked == true)
-            {
-                _processTimer.Start();
-            }
-        }
-    }
-
-    private void ClearSelectionButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        _selectedProcessNames.Clear();
-        ApplySelectionToRunningRows();
-        _loggerService.Write("Selection cleared by user.");
-        ProfileStatus = "Selection cleared.";
-        StatusText = "Profile cleared.";
-    }
-
-    private void PreviewButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        ShowBoostPreview();
-    }
-
-    private void ShowBoostPreview()
-    {
-        if (_selectedProcessNames.Count == 0)
-        {
-            MessageBox.Show(this, "No apps selected. Select apps or load an XML profile first.", "Boost Preview", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        var runningMatches = ProcessGroups
-            .Where(p => p.IsSelected)
-            .OrderByDescending(p => p.WorkingSetBytes)
-            .ToList();
-
-        var notRunning = _selectedProcessNames
-            .Where(name => runningMatches.All(p => !p.ExeName.Equals(name, StringComparison.OrdinalIgnoreCase)))
-            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var estimatedMemory = FormatBytes(runningMatches.Sum(p => p.WorkingSetBytes));
-        var runningLines = runningMatches.Count == 0
-            ? "No selected profile apps are running right now."
-            : string.Join(Environment.NewLine, runningMatches.Take(18).Select(p => $"• {p.DisplayName} ({p.ExeName}) - {p.MemoryText}, {p.InstanceCount} instance(s)"));
-
-        var skippedText = notRunning.Count == 0
-            ? "None"
-            : string.Join(", ", notRunning.Take(20)) + (notRunning.Count > 20 ? "..." : string.Empty);
-
-        MessageBox.Show(
-            this,
-            $"Running matches to close: {runningMatches.Count}\nEstimated RAM currently used by matches: {estimatedMemory}\n\n{runningLines}\n\nProfile entries not running / skipped:\n{skippedText}\n\nTip: restart Windows after a heavy boost to return to a clean normal background-app state.",
-            "Boost Preview",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
-    }
-
-    private async void BoostButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        if (_busyOperation)
-        {
-            StatusText = "Another operation is already running.";
-            return;
-        }
-
-        if (_selectedProcessNames.Count == 0)
-        {
-            MessageBox.Show(this, "No apps selected. Select apps or load an XML profile first.", "Boost", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        if (!_isAdministrator)
-        {
-            var elevateChoice = MessageBox.Show(
-                this,
-                "Mem-Booster is running in standard mode. It can close normal user apps, but apps running as administrator or protected by higher privileges may reject force close.\n\nRelaunch Mem-Booster as administrator for best results?",
-                "Administrator Recommended",
-                MessageBoxButton.YesNoCancel,
-                MessageBoxImage.Warning);
-
-            if (elevateChoice == MessageBoxResult.Cancel)
-            {
-                StatusText = "Boost cancelled.";
-                return;
-            }
-
-            if (elevateChoice == MessageBoxResult.Yes)
-            {
-                RelaunchAsAdminAndExit();
-                return;
-            }
-        }
-
-        var activeMatches = ProcessGroups.Count(p => p.IsSelected);
-        var activeMemory = FormatBytes(ProcessGroups.Where(p => p.IsSelected).Sum(p => p.WorkingSetBytes));
-        var fastBoost = FastBoostCheckBox.IsChecked == true;
-        var shouldResumeAutoRefreshAfterWarning = AutoRefreshCheckBox.IsChecked == true && _processTimer.IsEnabled;
-        if (shouldResumeAutoRefreshAfterWarning)
-        {
-            _processTimer.Stop();
-        }
-
-        _loggerService.Write($"Boost confirmation shown; selected={_selectedProcessNames.Count}; activeMatches={activeMatches}; activeMemory={activeMemory}; admin={_isAdministrator}; fastBoost={fastBoost}");
-        var confirm = ShowTimedWarning(
-            "⚠ Boost Now Warning",
-            $"Warning: Mem-Booster will close the selected apps and their child/helper processes. This can close unsaved work and may temporarily break some Windows/app functionality.\n\nProfile entries: {_selectedProcessNames.Count}\nRunning matches: {activeMatches}\nEstimated RAM in matched apps: {activeMemory}\nSmart close first: {(SmartCloseCheckBox.IsChecked == true ? "On" : "Off")}\nFast boost: {(fastBoost ? "On - graceful close will be skipped" : "Off")}\n\nMem-Booster will not try to reopen apps automatically. Restart Windows after a heavy boost if you want everything back to the normal background-app state. Use Revert Device Optimise if you changed Windows settings.",
-            "Start Boost",
-            5);
-
-        if (!confirm)
-        {
-            StatusText = "Boost cancelled.";
-            if (shouldResumeAutoRefreshAfterWarning)
-            {
-                _processTimer.Start();
-            }
-            return;
-        }
-
-        _processTimer.Stop();
-        using var operation = _loggerService.BeginOperation("BoostNow", $"selected={_selectedProcessNames.Count}; activeMatches={activeMatches}; admin={_isAdministrator}; fastBoost={fastBoost}");
-        SetBusyState(true, "Boost running... closing selected process trees.");
-        ShowOperationProgress("Preparing boost...", 5);
-
-        try
-        {
-            _loggerService.WriteProcessSnapshot("before-boost", ProcessGroups, _selectedProcessNames);
-            UpdateOperationProgress("Snapshot saved. Closing selected processes...", 24);
-            operation.Checkpoint("Before-boost snapshot saved");
-            var options = fastBoost
-                ? new TerminationOptions(false, 0, 700)
-                : new TerminationOptions(SmartCloseCheckBox.IsChecked == true, 750, 1200);
-            var selectedCsv = string.Join(", ", _selectedProcessNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
-
-            var result = await Task.Run(() => _processService.KillProcessTreesByExecutableNames(_selectedProcessNames, options, message => operation.Checkpoint(message)));
-            _loggerService.WriteBoost(selectedCsv, result);
-            UpdateOperationProgress("Processes closed. Refreshing memory and app list...", 78);
-
-            UpdateMemoryInfo();
-            operation.Checkpoint("Memory refreshed after boost");
-            await RefreshProcessesAsync(force: true, showProgress: true, progressContext: "Boost refresh");
-            _loggerService.WriteProcessSnapshot("after-boost", ProcessGroups, _selectedProcessNames);
-            UpdateOperationProgress("Boost complete.", 100);
-            operation.Checkpoint("After-boost refresh and snapshot complete");
-
-            var details = result.Messages.Count == 0
-                ? string.Empty
-                : "\n\nDetails:\n" + string.Join("\n", result.Messages.Take(8));
-
-            StatusText = result.Summary + " Restart Windows to fully return to the normal background-app state.";
-            if (result.Failed > 0)
-            {
-                MessageBox.Show(this, result.Summary + details, "Boost Completed With Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-            else
-            {
-                _loggerService.Write($"Boost complete notification kept in status bar: {result.Summary}");
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Boost Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            StatusText = $"Boost failed: {ex.Message}";
-            _loggerService.Write($"Boost failed: {ex}");
-        }
-        finally
-        {
-            await HideOperationProgressAfterDelayAsync(500);
-            SetBusyState(false);
-            if (AutoRefreshCheckBox.IsChecked == true)
-            {
-                _processTimer.Start();
-            }
-        }
-    }
-
-
-    private void SafeRefreshProcessView()
-    {
-        if (_processView is null)
-        {
-            return;
-        }
-
-        try
-        {
-            if (_processView is System.ComponentModel.IEditableCollectionView editableView)
-            {
-                if (editableView.IsEditingItem)
-                {
-                    editableView.CommitEdit();
-                }
-
-                if (editableView.IsAddingNew)
-                {
-                    editableView.CommitNew();
-                }
-            }
-        }
-        catch
-        {
-            try
-            {
-                if (_processView is System.ComponentModel.IEditableCollectionView editableView)
-                {
-                    if (editableView.IsEditingItem)
-                    {
-                        editableView.CancelEdit();
-                    }
-
-                    if (editableView.IsAddingNew)
-                    {
-                        editableView.CancelNew();
-                    }
-                }
-            }
-            catch
-            {
-                // Collection view cleanup must never block refresh.
-            }
-        }
-
-        _processView.Refresh();
-    }
-
-
-    private void EndGridEditTransaction()
-    {
-        try
-        {
-            ProcessesGrid.CommitEdit(DataGridEditingUnit.Cell, true);
-            ProcessesGrid.CommitEdit(DataGridEditingUnit.Row, true);
-        }
-        catch
-        {
-            try
-            {
-                ProcessesGrid.CancelEdit(DataGridEditingUnit.Cell);
-                ProcessesGrid.CancelEdit(DataGridEditingUnit.Row);
-            }
-            catch
-            {
-                // Grid edit cleanup must never block refresh or selection.
-            }
-        }
-    }
-
-    private void SelectionCheckBox_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        e.Handled = true;
-
-        if (sender is not CheckBox checkBox || checkBox.Tag is not string exeName || string.IsNullOrWhiteSpace(exeName))
-        {
-            return;
-        }
-
-        EndGridEditTransaction();
-
-        if (_busyOperation)
-        {
-            checkBox.IsChecked = ProcessGroups.FirstOrDefault(p => p.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase))?.IsSelected ?? false;
-            StatusText = "Please wait for the current operation to finish.";
-            return;
-        }
-
-        var process = ProcessGroups.FirstOrDefault(p => p.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase));
-        if (process is null)
-        {
-            checkBox.IsChecked = false;
-            StatusText = "That app is no longer running. Refresh the list and try again.";
-            return;
-        }
-
-        if (!process.CanSelect)
-        {
-            checkBox.IsChecked = false;
-            StatusText = $"{process.DisplayName} is protected and cannot be selected.";
-            return;
-        }
-
-        var requestedState = checkBox.IsChecked == true;
-        process.IsSelected = requestedState;
-        checkBox.IsChecked = process.IsSelected;
-        _loggerService.Write($"Selection checkbox clicked: exe={exeName}; selected={process.IsSelected}");
-    }
-
-    private void SelectAppNameButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        e.Handled = true;
-
-        if (_busyOperation)
-        {
-            StatusText = "Please wait for the current operation to finish.";
-            return;
-        }
-
-        if (sender is not Button button || button.Tag is not string exeName || string.IsNullOrWhiteSpace(exeName))
-        {
-            _loggerService.Write("App-name select ignored: missing executable tag.");
-            return;
-        }
-
-        var process = ProcessGroups.FirstOrDefault(p => p.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase));
-        if (process is null)
-        {
-            _loggerService.Write($"App-name select ignored: process disappeared before click was processed | exe={exeName}");
-            StatusText = "That app is no longer running. Refresh the list and try again.";
-            return;
-        }
-
-        SelectProcess(process, "app-name-click");
-    }
-
-    private void SelectProcess(ProcessGroup process, string source)
-    {
-        if (!process.CanSelect)
-        {
-            StatusText = $"{process.DisplayName} is protected and cannot be selected.";
-            _loggerService.Write($"Manual select blocked ({source}): {process.DisplayName} | {process.ExeName} | reason=protected");
-            return;
-        }
-
-        var newState = !process.IsSelected;
-        process.IsSelected = newState;
-        StatusText = newState
-            ? $"Selected {process.DisplayName}."
-            : $"Removed {process.DisplayName}.";
-        _loggerService.Write($"Manual select ({source}): {process.DisplayName} | {process.ExeName} | selected={newState}");
-    }
-
-    private void SuppressRowToggle(int milliseconds = 350)
-    {
-        _suppressRowToggleUntilUtc = DateTime.UtcNow.AddMilliseconds(milliseconds);
-    }
-
-    private void SetBusyState(bool busy, string? status = null)
-    {
-        _busyOperation = busy;
-        SuppressRowToggle(busy ? 1500 : 500);
-        Cursor = busy ? Cursors.Wait : null;
-
-        if (!string.IsNullOrWhiteSpace(status))
-        {
-            StatusText = status;
-        }
-    }
-
-    private void RemoveSelectedApp_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        if (sender is not Button button || button.Tag is not string exeName)
-        {
-            return;
-        }
-
-        _selectedProcessNames.Remove(exeName);
-        ApplySelectionToRunningRows();
-        _loggerService.Write($"Selected panel remove: {exeName}");
-        StatusText = $"Removed {ToFriendlyFallbackName(exeName)} from the selected profile.";
-    }
-
-    private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        _searchText = SearchBox.Text.Trim();
-        SafeRefreshProcessView();
-        _loggerService.Write($"Search filter changed: length={_searchText.Length}");
-    }
-
-    private void AutoRefreshCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
-    {
-        if (_processTimer is null)
-        {
-            return;
-        }
-
-        if (AutoRefreshCheckBox.IsChecked == true)
-        {
-            if (!_busyOperation)
-            {
-                _processTimer.Start();
-            }
-            StatusText = "Auto-refresh enabled.";
-        }
-        else
-        {
-            _processTimer.Stop();
-            StatusText = "Auto-refresh paused. Use Refresh manually.";
-        }
-    }
-
-    private void RunAsAdminButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        RelaunchAsAdminAndExit();
-    }
-
-    private void RelaunchAsAdminAndExit()
-    {
-        if (_isAdministrator)
-        {
-            MessageBox.Show(this, "Mem-Booster is already running as administrator.", "Administrator Mode", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        try
-        {
-            _profileService.SaveLocalProfile(GetSaveableProfileNames());
-            if (AdminService.RelaunchAsAdministrator())
-            {
-                Application.Current.Shutdown();
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            StatusText = "Administrator relaunch cancelled.";
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Run as Admin Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            StatusText = "Administrator relaunch failed.";
-        }
-    }
-
-    private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        if (_lastUpdateCheck?.IsUpdateAvailable == true && !string.IsNullOrWhiteSpace(_lastUpdateCheck.ReleaseUrl))
-        {
-            var openChoice = MessageBox.Show(
-                this,
-                $"A newer Mem-Booster release is available.\n\nCurrent: v{CurrentVersion}\nLatest: {_lastUpdateCheck.LatestVersion}\n\nOpen the GitHub release page?",
-                "Update Available",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Information);
-
-            if (openChoice == MessageBoxResult.Yes)
-            {
-                Process.Start(new ProcessStartInfo(_lastUpdateCheck.ReleaseUrl) { UseShellExecute = true });
-            }
-
-            return;
-        }
-
-        await CheckForUpdatesAsync(silent: false);
-    }
-
-    private async Task CheckForUpdatesAsync(bool silent)
-    {
-        if (_checkingForUpdates)
-        {
-            return;
-        }
-
-        _checkingForUpdates = true;
-        using var operation = _loggerService.BeginOperation("CheckUpdates", $"silent={silent}; current={CurrentVersion}");
-        var previousButtonText = UpdateButtonText;
-        UpdateButtonText = "Checking...";
-
-        try
-        {
-            var result = await _updateService.CheckLatestAsync(CurrentVersion);
-            _lastUpdateCheck = result;
-            operation.Checkpoint($"latest={result.LatestVersion}; updateAvailable={result.IsUpdateAvailable}; releaseUrl={result.ReleaseUrl}");
-
-            if (result.IsUpdateAvailable)
-            {
-                UpdateButtonText = $"Update {result.LatestVersion}";
-                StatusText = $"Update available: {result.LatestVersion}";
-
-                if (!silent)
-                {
-                    var openChoice = MessageBox.Show(
-                        this,
-                        $"A newer Mem-Booster release is available.\n\nCurrent: v{CurrentVersion}\nLatest: {result.LatestVersion}\n\nOpen the GitHub release page?",
-                        "Update Available",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Information);
-
-                    if (openChoice == MessageBoxResult.Yes && !string.IsNullOrWhiteSpace(result.ReleaseUrl))
-                    {
-                        Process.Start(new ProcessStartInfo(result.ReleaseUrl) { UseShellExecute = true });
-                    }
-                }
-            }
-            else
-            {
-                UpdateButtonText = "Up to date";
-                var latestDisplay = string.IsNullOrWhiteSpace(result.LatestVersion) ? "No published release found" : $"v{result.LatestVersion}";
-                StatusText = $"Up to date. GitHub latest release: {latestDisplay}.";
-                if (!silent)
-                {
-                    MessageBox.Show(this, $"Mem-Booster is up to date.\n\nInstalled: v{CurrentVersion}\nGitHub latest release: {latestDisplay}", "Updates", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            UpdateButtonText = previousButtonText == "Checking..." ? "Updates" : previousButtonText;
-            _loggerService.Write($"Update check failed: {ex}");
-
-            if (!silent)
-            {
-                MessageBox.Show(this, "Could not check for updates. Please check your internet connection and try again.\n\n" + ex.Message, "Update Check Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-        }
-        finally
-        {
-            _checkingForUpdates = false;
-        }
-    }
-
-    private void CollectDiagnosticsButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        try
-        {
-            using var operation = _loggerService.BeginOperation("CollectDiagnostics", $"version={CurrentVersion}");
-            var zipPath = _diagnosticsService.Collect(_profileService.AppDataDirectory, CurrentVersion);
-            operation.Checkpoint($"Diagnostics zip={zipPath}");
-            StatusText = "Diagnostics package created.";
-
-            var openChoice = MessageBox.Show(
-                this,
-                $"Diagnostics package created:\n\n{zipPath}\n\nOpen the folder now?",
-                "Diagnostics Collected",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Information);
-
-            if (openChoice == MessageBoxResult.Yes)
-            {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{zipPath}\"") { UseShellExecute = true });
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Diagnostics Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            StatusText = "Diagnostics collection failed.";
-            _loggerService.Write($"Diagnostics failed: {ex}");
-        }
-    }
-
-
-    private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        try
-        {
-            var logsDirectory = Path.Combine(_profileService.AppDataDirectory, "logs");
-            Directory.CreateDirectory(logsDirectory);
-            _loggerService.Write("Logs folder opened by user.");
-            Process.Start(new ProcessStartInfo("explorer.exe", logsDirectory) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Could not open logs", MessageBoxButton.OK, MessageBoxImage.Error);
-            _loggerService.Write($"Open logs failed: {ex}");
-        }
-    }
-
-    private void OpenGithub_Click(object sender, RoutedEventArgs e)
-    {
-        SuppressRowToggle();
-        try
-        {
-            Process.Start(new ProcessStartInfo(UpdateService.RepositoryUrl) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "Could not open GitHub", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private void ApplySelectionToRunningRows()
-    {
         _syncingSelection = true;
         try
         {
-            foreach (var process in ProcessGroups)
+            foreach (var group in _allProcessGroups)
             {
-                process.IsSelected = process.CanSelect && _selectedProcessNames.Contains(process.ExeName);
+                var shouldBeSelected = _selectedProcessNames.Contains(group.ExeName) && group.CanSelect;
+                if (group.IsSelected != shouldBeSelected)
+                {
+                    group.IsSelected = shouldBeSelected;
+                }
             }
         }
         finally
         {
             _syncingSelection = false;
         }
+    }
+
+    private void SetSelection(IEnumerable<string> executableNames, string mode)
+    {
+        _selectedProcessNames.Clear();
+
+        foreach (var exe in executableNames)
+        {
+            var name = SafetyRules.NormaliseProcessName(exe);
+            if (!string.IsNullOrWhiteSpace(name) && SafetyRules.IsAutoLoadProfileAllowed(name))
+            {
+                _selectedProcessNames.Add(name);
+            }
+        }
 
         UpdateSelectionSummary();
+        ApplyFilter();
+
+        var running = _allProcessGroups.Count(g => _selectedProcessNames.Contains(g.ExeName));
+        ProfileStatusTextBlock.Text = $"{mode}: {_selectedProcessNames.Count} selected, {running} currently running.";
+        _loggerService.WriteSelection($"WinUI {mode}", _selectedProcessNames, _allProcessGroups);
+    }
+
+    private void ToggleProcess(ProcessGroup group)
+    {
+        if (_busyOperation)
+        {
+            StatusTextBlock.Text = "Please wait for the current operation to finish.";
+            return;
+        }
+
+        if (!group.CanSelect)
+        {
+            StatusTextBlock.Text = $"{group.DisplayName} is protected and cannot be selected.";
+            return;
+        }
+
+        group.IsSelected = !group.IsSelected;
+        StatusTextBlock.Text = group.IsSelected ? $"Selected {group.DisplayName}." : $"Removed {group.DisplayName}.";
+    }
+
+    private async void RefreshButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshProcessesAsync("Manual refresh", true);
+    }
+
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _searchText = SearchBox.Text;
+        ApplyFilter();
+    }
+
+    private void ProcessCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ProcessGroup group })
+        {
+            ToggleProcess(group);
+        }
+    }
+
+    private void ProcessRowButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: ProcessGroup group })
+        {
+            ToggleProcess(group);
+        }
+    }
+
+    private void RemoveSelectedApp_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: SelectedAppItem item })
+        {
+            _selectedProcessNames.Remove(item.ExeName);
+            UpdateSelectionSummary();
+            ApplyFilter();
+            StatusTextBlock.Text = $"Removed {item.DisplayName}.";
+        }
+    }
+
+    private void SelectRecommendedButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetSelection(_allProcessGroups
+            .Where(p => p.CanSelect && SafetyRules.IsRecommendedForGamingBoost(p.ExeName))
+            .Select(p => p.ExeName), "Safe Select");
+    }
+
+    private void ExtremeSelectButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetSelection(_allProcessGroups
+            .Where(p => p.CanSelect && SafetyRules.IsExtremeRecommendedForGamingBoost(p.ExeName))
+            .Select(p => p.ExeName), "Extreme Select");
+    }
+
+    private void AggressiveSelectButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetSelection(_allProcessGroups
+            .Where(p => p.CanSelect && SafetyRules.IsAggressiveRecommendedForGamingBoost(p.ExeName))
+            .Select(p => p.ExeName), "Aggressive Select");
+    }
+
+    private void ClearSelectionButton_Click(object sender, RoutedEventArgs e)
+    {
+        _selectedProcessNames.Clear();
+        UpdateSelectionSummary();
+        ApplyFilter();
+        ProfileStatusTextBlock.Text = "Selection cleared.";
+        StatusTextBlock.Text = "Selected profile cleared.";
+    }
+
+    private async void PreviewButton_Click(object sender, RoutedEventArgs e)
+    {
+        var running = _allProcessGroups
+            .Where(p => _selectedProcessNames.Contains(p.ExeName))
+            .OrderByDescending(p => p.WorkingSetBytes)
+            .ToList();
+
+        var body = running.Count == 0
+            ? "No selected apps are currently running."
+            : string.Join(Environment.NewLine, running.Take(40).Select(p => $"• {p.DisplayName} ({p.ExeName}) - {p.MemoryText}"));
+
+        await ShowMessageAsync("Preview Boost", body);
+    }
+
+    private async void BoostButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busyOperation)
+        {
+            return;
+        }
+
+        var runningTargets = _allProcessGroups
+            .Where(p => _selectedProcessNames.Contains(p.ExeName))
+            .ToList();
+
+        if (runningTargets.Count == 0)
+        {
+            await ShowMessageAsync("Nothing to boost", "No selected apps are currently running.");
+            return;
+        }
+
+        if (!AdminService.IsCurrentProcessElevated())
+        {
+            var adminChoice = await ShowConfirmAsync(
+                "Run as administrator?",
+                "Mem-Booster is currently in Standard mode. Some elevated apps may refuse to close. Relaunch as administrator now?",
+                "Relaunch",
+                "Continue");
+            if (adminChoice)
+            {
+                try
+                {
+                    _profileService.SaveLocalProfile(_selectedProcessNames);
+                    if (AdminService.RelaunchAsAdministrator())
+                    {
+                        Close();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await ShowMessageAsync("Admin relaunch failed", ex.Message);
+                }
+
+                return;
+            }
+        }
+
+        var selectedMemory = runningTargets.Sum(p => p.WorkingSetBytes);
+        var warning = $"Mem-Booster will close {runningTargets.Count} selected running app group(s).{Environment.NewLine}{Environment.NewLine}" +
+                      $"Estimated selected working set: {FormatBytes(selectedMemory)}{Environment.NewLine}{Environment.NewLine}" +
+                      "Save your work first. Heavy boost may stop background sync, helpers, web views, editors or work apps. " +
+                      "Restart Windows after gaming if you want the normal background-app state back.";
+
+        var accepted = await ShowTimedWarningAsync("Boost Now Warning", warning, 5);
+        if (!accepted)
+        {
+            StatusTextBlock.Text = "Boost cancelled.";
+            return;
+        }
+
+        _busyOperation = true;
+        _operationWatch.Restart();
+
+        try
+        {
+            ShowProgress("Preparing boost...", 10);
+            var before = _loggerService.WriteProcessSnapshot("before-boost", _allProcessGroups, _selectedProcessNames);
+            _loggerService.Write($"WinUI before-boost snapshot: {before}");
+
+            var fastBoost = FastBoostCheckBox.IsChecked == true;
+            var smartClose = SmartCloseCheckBox.IsChecked == true && !fastBoost;
+            var options = fastBoost
+                ? new TerminationOptions(false, 0, 900)
+                : new TerminationOptions(smartClose, 750, 1200);
+
+            ShowProgress("Closing selected app process trees...", 45);
+
+            var result = await Task.Run(() => _processService.KillProcessTreesByExecutableNames(
+                _selectedProcessNames,
+                options,
+                line => _loggerService.WritePerformance($"WinUI boost: {line}")));
+
+            _loggerService.WriteBoost(string.Join(", ", _selectedProcessNames.OrderBy(n => n)), result);
+
+            ShowProgress("Refreshing memory and running app list...", 80);
+            await RefreshProcessesAfterBoostAsync();
+
+            ShowProgress("Boost complete.", 100);
+            StatusTextBlock.Text = $"Boost complete: {result.Summary}. Restart Windows to return to normal background-app state.";
+            ElapsedTextBlock.Text = $"{_operationWatch.Elapsed.TotalSeconds:0.0}s";
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"Boost failed: {ex.Message}";
+            _loggerService.Write($"WinUI boost failed: {ex}");
+            await ShowMessageAsync("Boost failed", ex.Message);
+        }
+        finally
+        {
+            _operationWatch.Stop();
+            await Task.Delay(350);
+            HideProgress();
+            _busyOperation = false;
+        }
+    }
+
+    private async Task RefreshProcessesAfterBoostAsync()
+    {
+        RefreshMemory();
+
+        var snapshots = await Task.Run(() => _processService.GetProcessGroups());
+        var incoming = snapshots.Select(s => s.ExeName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var oldGroup in _allProcessGroups)
+        {
+            oldGroup.PropertyChanged -= ProcessGroup_PropertyChanged;
+        }
+
+        _allProcessGroups.Clear();
+
+        foreach (var snapshot in snapshots.OrderByDescending(s => s.WorkingSetBytes))
+        {
+            var group = new ProcessGroup(snapshot.ExeName);
+            group.UpdateFrom(snapshot, _selectedProcessNames.Contains(snapshot.ExeName));
+            group.PropertyChanged += ProcessGroup_PropertyChanged;
+            _allProcessGroups.Add(group);
+        }
+
+        ApplyFilter();
+        UpdateSelectionSummary();
+        _loggerService.WriteProcessSnapshot("after-boost", _allProcessGroups, _selectedProcessNames);
+    }
+
+    private void SaveLocalButton_Click(object sender, RoutedEventArgs e)
+    {
+        _profileService.SaveLocalProfile(_selectedProcessNames);
+        ProfileStatusTextBlock.Text = $"Local profile saved with {_selectedProcessNames.Count} app(s).";
+        StatusTextBlock.Text = "Local profile saved.";
+    }
+
+    private async void ExportXmlButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var filePath = await PickSaveProfilePathAsync();
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return;
+            }
+
+            _profileService.SaveProfile(filePath, new ProfileData("Gaming Boost", _selectedProcessNames));
+            StatusTextBlock.Text = $"Profile exported: {Path.GetFileName(filePath)}";
+        }
+        catch (Exception ex)
+        {
+            _loggerService.Write($"WinUI export profile failed: {ex}");
+            await ShowMessageAsync("Export failed", ToUserError(ex));
+        }
+    }
+
+    private async void LoadXmlButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var filePath = await PickOpenProfilePathAsync();
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return;
+            }
+
+            var profile = _profileService.LoadProfile(filePath);
+            SetSelection(profile.ExecutableNames, $"Loaded XML: {profile.Name}");
+            StatusTextBlock.Text = $"Loaded profile: {Path.GetFileName(filePath)}";
+        }
+        catch (Exception ex)
+        {
+            _loggerService.Write($"WinUI load profile failed: {ex}");
+            await ShowMessageAsync("Load failed", ToUserError(ex));
+        }
+    }
+
+
+    private Task<string?> PickOpenProfilePathAsync()
+    {
+        try
+        {
+            var path = NativeFileDialogService.ShowOpenXmlProfileDialog(WindowNative.GetWindowHandle(this));
+            return Task.FromResult(path);
+        }
+        catch (Exception ex)
+        {
+            _loggerService.Write($"Explorer profile open dialog failed: {ex}");
+            throw new InvalidOperationException("The Explorer file picker could not open. " + ToUserError(ex), ex);
+        }
+    }
+
+    private Task<string?> PickSaveProfilePathAsync()
+    {
+        try
+        {
+            var path = NativeFileDialogService.ShowSaveXmlProfileDialog(WindowNative.GetWindowHandle(this));
+            return Task.FromResult(path);
+        }
+        catch (Exception ex)
+        {
+            _loggerService.Write($"Explorer profile save dialog failed: {ex}");
+            throw new InvalidOperationException("The Explorer file picker could not open. " + ToUserError(ex), ex);
+        }
+    }
+
+    private static string ToUserError(Exception ex)
+    {
+        if (!string.IsNullOrWhiteSpace(ex.Message))
+        {
+            return ex.Message;
+        }
+
+        return ex.ToString();
+    }
+
+    private async void DeviceOptimiseButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!AdminService.IsCurrentProcessElevated())
+        {
+            var relaunch = await ShowConfirmAsync(
+                "Administrator mode recommended",
+                "Device Optimise changes Windows settings and should be run as administrator.",
+                "Relaunch",
+                "Cancel");
+
+            if (relaunch)
+            {
+                try
+                {
+                    if (AdminService.RelaunchAsAdministrator())
+                    {
+                        Close();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await ShowMessageAsync("Admin relaunch failed", ex.Message);
+                }
+            }
+
+            return;
+        }
+
+        if (!_deviceOptimizationService.IsWindows11OrLater(out var osDescription))
+        {
+            await ShowMessageAsync("Windows 11 required", $"Device Optimise is focused on Windows 11. Detected: {osDescription}");
+            return;
+        }
+
+        var options = _deviceOptimizationService.GetAvailableOptions();
+        var selectedIds = await ShowDeviceOptionsDialogAsync(options);
+        if (selectedIds is null || selectedIds.Count == 0)
+        {
+            StatusTextBlock.Text = "Device Optimise cancelled.";
+            return;
+        }
+
+        var accepted = await ShowTimedWarningAsync(
+            "Device Optimise Warning",
+            "Selected Windows 11 gaming-session settings will be applied. Save work first. Use Revert Device Optimise to restore captured settings.",
+            15);
+
+        if (!accepted)
+        {
+            return;
+        }
+
+        _busyOperation = true;
+        try
+        {
+            ShowProgress("Applying Device Optimise...", 20);
+            var result = await Task.Run(() => _deviceOptimizationService.Apply(
+                selectedIds,
+                line => _loggerService.WriteDeviceOptimise(line),
+                (message, value) => DispatcherQueue.TryEnqueue(() => ShowProgress(message, value))));
+
+            RevertDeviceOptimiseButton.IsEnabled = _deviceOptimizationService.HasActiveState();
+            StatusTextBlock.Text = result.Summary;
+            await ShowMessageAsync("Device Optimise", result.Summary);
+        }
+        catch (Exception ex)
+        {
+            await ShowMessageAsync("Device Optimise failed", ex.Message);
+            _loggerService.WriteDeviceOptimise("Apply failed: " + ex);
+        }
+        finally
+        {
+            HideProgress();
+            _busyOperation = false;
+        }
+    }
+
+    private async void RevertDeviceOptimiseButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_deviceOptimizationService.HasActiveState())
+        {
+            await ShowMessageAsync("Nothing to revert", "No Device Optimise state is currently captured.");
+            return;
+        }
+
+        var accepted = await ShowTimedWarningAsync(
+            "Revert Device Optimise",
+            "Captured Windows setting values will be restored. Some changes may still require a restart to fully apply.",
+            15);
+
+        if (!accepted)
+        {
+            return;
+        }
+
+        _busyOperation = true;
+        try
+        {
+            ShowProgress("Reverting Device Optimise...", 30);
+            var result = await Task.Run(() => _deviceOptimizationService.Revert(
+                line => _loggerService.WriteDeviceOptimise(line),
+                (message, value) => DispatcherQueue.TryEnqueue(() => ShowProgress(message, value))));
+
+            RevertDeviceOptimiseButton.IsEnabled = _deviceOptimizationService.HasActiveState();
+            StatusTextBlock.Text = result.Summary;
+            await ShowMessageAsync("Revert Device Optimise", result.Summary);
+        }
+        catch (Exception ex)
+        {
+            await ShowMessageAsync("Revert failed", ex.Message);
+            _loggerService.WriteDeviceOptimise("Revert failed: " + ex);
+        }
+        finally
+        {
+            HideProgress();
+            _busyOperation = false;
+        }
+    }
+
+    private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e)
+    {
+        await CheckUpdatesAsync(silent: false);
+    }
+
+    private async Task CheckUpdatesAsync(bool silent)
+    {
+        try
+        {
+            var result = await _updateService.CheckLatestAsync(CurrentVersion);
+            _pendingReleaseUrl = result.ReleaseUrl;
+
+            if (result.IsUpdateAvailable)
+            {
+                UpdateButton.Content = $"Update {result.LatestVersion}";
+                if (!silent)
+                {
+                    var open = await ShowConfirmAsync("Update available", $"Latest release: {result.LatestVersion}", "Open GitHub", "Close");
+                    if (open)
+                    {
+                        await Launcher.LaunchUriAsync(new Uri(result.ReleaseUrl));
+                    }
+                }
+            }
+            else
+            {
+                UpdateButton.Content = "Up to date";
+                if (!silent)
+                {
+                    await ShowMessageAsync("Updates", string.IsNullOrWhiteSpace(result.LatestVersion)
+                        ? "No GitHub release was found yet."
+                        : $"Latest GitHub release: {result.LatestVersion}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateButton.Content = "Update check failed";
+            _loggerService.Write($"WinUI update check failed: {ex}");
+            if (!silent)
+            {
+                await ShowMessageAsync("Update check failed", ex.Message);
+            }
+        }
+    }
+
+    private async void CollectDiagnosticsButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var package = _diagnosticsService.Collect(_appDataDirectory, CurrentVersion);
+            StatusTextBlock.Text = $"Diagnostics created: {package}";
+            await ShowMessageAsync("Diagnostics created", package);
+        }
+        catch (Exception ex)
+        {
+            await ShowMessageAsync("Diagnostics failed", ex.Message);
+        }
+    }
+
+    private async void OpenLogsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var logsPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Mem-Booster",
+            "logs");
+        Directory.CreateDirectory(logsPath);
+        await Launcher.LaunchFolderPathAsync(logsPath);
+    }
+
+    private async void OpenGithub_Click(object sender, RoutedEventArgs e)
+    {
+        await Launcher.LaunchUriAsync(new Uri(RepositoryUrl));
+    }
+
+    private async void RunAsAdminButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _profileService.SaveLocalProfile(_selectedProcessNames);
+            if (AdminService.RelaunchAsAdministrator())
+            {
+                Close();
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowMessageAsync("Admin relaunch failed", ex.Message);
+        }
+    }
+
+    private void ThemeToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        _isDarkTheme = !_isDarkTheme;
+        var theme = _isDarkTheme ? "Dark" : "Light";
+        _profileService.SaveThemePreference(theme);
+        ApplyTheme(theme, animate: true);
+        StatusTextBlock.Text = $"{theme} theme enabled.";
+    }
+
+    private async Task<List<string>?> ShowDeviceOptionsDialogAsync(IReadOnlyList<DeviceOptimizationOption> options)
+    {
+        var checks = new List<CheckBox>();
+        var panel = new StackPanel { Spacing = 10, MaxHeight = 560 };
+
+        foreach (var option in options)
+        {
+            var suffix = option.RequiresRestart ? "  • restart required" : option.Advanced ? "  • advanced" : string.Empty;
+            var check = new CheckBox
+            {
+                Content = $"{option.Name}{suffix}",
+                IsChecked = option.DefaultSelected,
+                Tag = option.Id
+            };
+
+            checks.Add(check);
+            panel.Children.Add(check);
+
+            var desc = option.WarningText is not null
+                ? $"{option.Description} Warning: {option.WarningText}"
+                : option.Description;
+            panel.Children.Add(new TextBlock
+            {
+                Text = desc,
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 12,
+                Margin = new Thickness(28, -8, 0, 2)
+            });
+        }
+
+        var scroller = new ScrollViewer { Content = panel, MaxHeight = 560 };
+
+        var dialog = new ContentDialog
+        {
+            Title = "Device Optimise",
+            Content = scroller,
+            PrimaryButtonText = "Continue",
+            CloseButtonText = "Cancel",
+            XamlRoot = RootGrid.XamlRoot
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary)
+        {
+            return null;
+        }
+
+        return checks
+            .Where(c => c.IsChecked == true && c.Tag is string)
+            .Select(c => (string)c.Tag)
+            .ToList();
+    }
+
+    private async Task<bool> ShowTimedWarningAsync(string title, string message, int seconds)
+    {
+        var text = new TextBlock
+        {
+            Text = message,
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = text,
+            PrimaryButtonText = $"Wait {seconds}s",
+            CloseButtonText = "Cancel",
+            IsPrimaryButtonEnabled = false,
+            XamlRoot = RootGrid.XamlRoot
+        };
+
+        var remaining = seconds;
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromSeconds(1);
+        timer.Tick += (_, _) =>
+        {
+            remaining--;
+            if (remaining <= 0)
+            {
+                timer.Stop();
+                dialog.PrimaryButtonText = "Continue";
+                dialog.IsPrimaryButtonEnabled = true;
+            }
+            else
+            {
+                dialog.PrimaryButtonText = $"Wait {remaining}s";
+            }
+        };
+
+        _loggerService.Write($"WinUI timed warning shown: title={title}; delaySeconds={seconds}");
+        timer.Start();
+        var result = await dialog.ShowAsync();
+        timer.Stop();
+        _loggerService.Write($"WinUI timed warning result: title={title}; accepted={result == ContentDialogResult.Primary}");
+        return result == ContentDialogResult.Primary;
+    }
+
+    private async Task<bool> ShowConfirmAsync(string title, string message, string primary, string close)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+            PrimaryButtonText = primary,
+            CloseButtonText = close,
+            XamlRoot = RootGrid.XamlRoot
+        };
+
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    private async Task ShowMessageAsync(string title, string message)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+            CloseButtonText = "OK",
+            XamlRoot = RootGrid.XamlRoot
+        };
+
+        await dialog.ShowAsync();
+    }
+
+    private void ShowProgress(string message, double value)
+    {
+        ProgressPanel.Visibility = Visibility.Visible;
+        OperationProgress.Value = Math.Clamp(value, 0, 100);
+        OperationProgressText.Text = message;
+        if (_operationWatch.IsRunning)
+        {
+            ElapsedTextBlock.Text = $"{_operationWatch.Elapsed.TotalSeconds:0.0}s";
+        }
+    }
+
+    private void HideProgress()
+    {
+        ProgressPanel.Visibility = Visibility.Collapsed;
+        OperationProgress.Value = 0;
+        OperationProgressText.Text = string.Empty;
     }
 
     private static string FormatBytes(long bytes)
     {
         var mb = bytes / 1024d / 1024d;
-        return mb >= 1024
-            ? $"{mb / 1024d:0.0} GB"
-            : $"{mb:0} MB";
-    }
-
-    protected override void OnClosing(CancelEventArgs e)
-    {
-        try
-        {
-            _memoryTimer?.Stop();
-            _processTimer?.Stop();
-            _progressTimer?.Stop();
-        }
-        catch
-        {
-            // Ignore timer shutdown issues during app close.
-        }
-
-        try
-        {
-            _profileService.SaveLocalProfile(_selectedProcessNames);
-        }
-        catch
-        {
-            // Do not block app close because profile auto-save failed.
-        }
-
-        base.OnClosing(e);
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value))
-        {
-            return false;
-        }
-
-        field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        return true;
+        return mb >= 1024 ? $"{mb / 1024d:0.0} GB" : $"{mb:0} MB";
     }
 }
