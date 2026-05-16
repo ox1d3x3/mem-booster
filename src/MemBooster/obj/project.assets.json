@@ -1097,11 +1097,11 @@
   "project": {
     "version": "0.6.13",
     "restore": {
-      "projectUniqueName": "C:\\Users\\TAMGG\\Downloads\\mem_booster_winui_v0.6.13\\src\\MemBooster\\MemBooster.csproj",
+      "projectUniqueName": "C:\\Github-Projects\\mem-booster\\src\\MemBooster\\MemBooster.csproj",
       "projectName": "Mem-Booster",
-      "projectPath": "C:\\Users\\TAMGG\\Downloads\\mem_booster_winui_v0.6.13\\src\\MemBooster\\MemBooster.csproj",
+      "projectPath": "C:\\Github-Projects\\mem-booster\\src\\MemBooster\\MemBooster.csproj",
       "packagesPath": "C:\\Users\\TAMGG\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\TAMGG\\Downloads\\mem_booster_winui_v0.6.13\\src\\MemBooster\\obj\\",
+      "outputPath": "C:\\Github-Projects\\mem-booster\\src\\MemBooster\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
