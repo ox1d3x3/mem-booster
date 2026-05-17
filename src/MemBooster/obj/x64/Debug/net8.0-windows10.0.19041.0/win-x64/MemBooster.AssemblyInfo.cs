@@ -13,11 +13,11 @@ using System.Reflection;
 
 [assembly: System.Reflection.AssemblyCompanyAttribute("Ox1d3x3")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
-[assembly: System.Reflection.AssemblyFileVersionAttribute("0.6.13.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.6.13+c3da4d9a54659ba681b86ef5b4a79c77b4a2719f")]
+[assembly: System.Reflection.AssemblyFileVersionAttribute("0.6.14.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.6.14")]
 [assembly: System.Reflection.AssemblyProductAttribute("Mem-Booster by Ox1d3x3")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Mem-Booster")]
-[assembly: System.Reflection.AssemblyVersionAttribute("0.6.13.0")]
+[assembly: System.Reflection.AssemblyVersionAttribute("0.6.14.0")]
 [assembly: System.Runtime.Versioning.TargetPlatformAttribute("Windows10.0.19041.0")]
 [assembly: System.Runtime.Versioning.SupportedOSPlatformAttribute("Windows10.0.19041.0")]
 

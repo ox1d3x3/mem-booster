@@ -14,7 +14,7 @@ namespace MemBooster;
 
 public sealed partial class MainWindow : Window
 {
-    private const string CurrentVersion = "0.6.13";
+    private const string CurrentVersion = "0.6.14";
     private const string RepositoryUrl = "https://github.com/ox1d3x3/mem-booster";
 
     private readonly MemoryService _memoryService = new();
@@ -233,8 +233,11 @@ public sealed partial class MainWindow : Window
             UpdateSelectionSummary();
 
             watch.Stop();
-            StatusTextBlock.Text = $"Running apps refreshed in {watch.ElapsedMilliseconds} ms. Manual refresh only.";
-            _loggerService.Write($"WinUI refresh complete: context={context}; groups={_allProcessGroups.Count}; visible={ProcessGroups.Count}; selected={_selectedProcessNames.Count}; elapsedMs={watch.ElapsedMilliseconds}");
+            StatusTextBlock.Text = $"Running apps refreshed in {watch.ElapsedMilliseconds} ms.";
+            if (!string.Equals(context, "Manual refresh", StringComparison.OrdinalIgnoreCase) || watch.ElapsedMilliseconds >= 50)
+            {
+                _loggerService.Write($"WinUI refresh complete: context={context}; groups={_allProcessGroups.Count}; visible={ProcessGroups.Count}; selected={_selectedProcessNames.Count}; elapsedMs={watch.ElapsedMilliseconds}");
+            }
 
             if (showProgress)
             {
@@ -327,7 +330,7 @@ public sealed partial class MainWindow : Window
 
         var active = selectedGroups.Count;
         var total = _selectedProcessNames.Count;
-        var text = total == 0 ? "0 selected" : $"{active} active / {total} profile";
+        var text = total == 0 ? "0 selected" : $"{active} active / {total} apps";
         SelectedTextBlock.Text = text;
         SelectedPanelTextBlock.Text = text;
 

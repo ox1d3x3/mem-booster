@@ -17,8 +17,8 @@
     <SelfContained>true</SelfContained>
     <AssemblyName>Mem-Booster</AssemblyName>
     <ApplicationIcon>Assets\mem-booster.ico</ApplicationIcon>
-    <Version>0.6.13</Version>
-    <FileVersion>0.6.13.0</FileVersion>
+    <Version>0.6.14</Version>
+    <FileVersion>0.6.14.0</FileVersion>
     <Product>Mem-Booster by Ox1d3x3</Product>
     <Authors>Ox1d3x3</Authors>
   </PropertyGroup>

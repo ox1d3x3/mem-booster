@@ -1,31 +1,37 @@
-Mem-Booster WinUI 3 v0.6.13 static review
+Mem-Booster WinUI 3 v0.6.14 static review
 ==========================================
 
 Fixes included:
-- Added explicit AppWindow.SetIcon() so the top-left window icon uses Assets\mem-booster.ico.
-- Kept ApplicationIcon in the project for the published EXE icon.
-- Reworked the theme button into a clean animated Dark/Light toggle.
-- Added lightweight manual thumb animation for a smoother sun/moon transition.
-- Added selection-sync guard in UpdateSelectionSummary to avoid unnecessary nested property-change updates.
+- Removed the bottom status suffix 'Manual refresh only.'
+- Renamed the selected-count wording from profile to apps.
+- Changed the card title from Selected profile to Selected apps.
+- Reduced normal log noise from fast manual refreshes; initial refresh and slow refreshes are still logged.
+- Kept AppWindow icon handling, animated theme toggle, manual refresh model and native Explorer XML picker unchanged.
+
+Diagnostics review summary:
+- previous build startup was clean in the supplied diagnostics.
+- Initial WinUI refresh was around 25-32 ms.
+- Manual refresh was around 5-7 ms.
+- Latest boost entries showed 0 failed items.
+- No current startup exception was found in the latest supplied logs.
 
 Checks performed:
 - Project/App/MainWindow XML parse
 - XAML event handler matching
-- Theme toggle XAML/code token scan
-- AppWindow icon code scan
-- ApplicationIcon property scan
-- Asset existence scan
-- Selection synchronisation guard scan
+- Requested text scan
+- AppWindow/ApplicationIcon scan
+- Theme toggle token scan
+- Native dialog COM pattern scan
 - UseWindowsForms/System.Windows.Forms scan
 - Windows.Storage.Pickers scan
 - Window.Resources scan
 - Grid/StackPanel Padding scan
 - ListView invalid WPF-style border property scan
-- Native dialog COM pattern scan
 - SelectedAppItem record/init-only scan
 - ProcessGroup metadata safety scan
 - ProfileService constructor mismatch scan
 - DiagnosticsService Collect signature scan
+- Asset existence scan
 - Basic C# brace balance
 - ZIP integrity
 
@@ -33,7 +39,7 @@ Errors:
 None found by static checks
 
 Warnings:
-Old version text before review rewrite: STATIC_REVIEW.txt
+None
 
 Important limitation:
 This environment cannot run Visual Studio's WinUI/XBF compiler. Visual Studio remains the final compile/publish test.

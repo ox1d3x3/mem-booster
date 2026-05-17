@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "mpz0FHdYWHs=",
+  "dgSpecHash": "CfET6IgJDTg=",
   "success": true,
-  "projectFilePath": "C:\\Github-Projects\\mem-booster\\src\\MemBooster\\MemBooster.csproj",
+  "projectFilePath": "C:\\Users\\TAMGG\\Downloads\\mem_booster_winui_v0.6.14\\src\\MemBooster\\MemBooster.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\TAMGG\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.25\\microsoft.net.illink.tasks.8.0.25.nupkg.sha512",
     "C:\\Users\\TAMGG\\.nuget\\packages\\microsoft.web.webview2\\1.0.2651.64\\microsoft.web.webview2.1.0.2651.64.nupkg.sha512",

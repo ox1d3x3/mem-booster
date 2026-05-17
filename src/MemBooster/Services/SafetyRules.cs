@@ -994,7 +994,7 @@ public static class SafetyRules
             return true;
         }
 
-        // v0.6.13: do not auto-select fully unknown process names in Aggressive mode.
+        // v0.6.14: do not auto-select fully unknown process names in Aggressive mode.
         // Unknown apps remain manually selectable/reviewable, but Aggressive can still catch known non-gaming suites by token.
         return false;
     }
