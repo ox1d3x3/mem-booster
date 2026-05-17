@@ -176,6 +176,8 @@ Created by **Ox1d3x3**
 --- 
 ## Disclaimer
 
+### This software does not collect any user data - Any network request only checks the latest build/updates from GitHub releases
+
 Mem-Booster is provided **as is**, with **no warranty** of any kind.
 
 Use it at your own risk. The app is designed to avoid unsafe Windows modifications, but closing apps and changing system settings can still affect running programs, unsaved work, background sync, overlays, notifications, or other active tasks.
