@@ -101,13 +101,7 @@ Mem-Booster intentionally does not disable or modify antivirus, Defender, Memory
 
 - Windows APP SDK
 Download from here: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads
-
-### To run the published app
-
-If you use the general release build, no separate .NET runtime is required.
-
-For Portable install:
-- **.NET 8 Desktop Runtime**
+- .NET 8
 Download: https://dotnet.microsoft.com/en-us/download/dotnet/8.0
 
 
