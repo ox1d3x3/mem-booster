@@ -5,7 +5,8 @@ Mem-Booster is a native Windows 11 utility designed to prepare your PC for a cle
 **The goal is simple**: free up system resources before gaming without using unsafe “debloat” methods that can break Windows, security tools, drivers, launchers, overlays, or anti-cheat systems.
 
 
-## Please note that latest build requires to run **Windows APP SDK** Download from here : https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads
+## Please note that the latest build requires running the **Windows APP SDK** 
+Download from here: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads
 
 ### Latest Build : https://github.com/ox1d3x3/mem-booster/releases
 
@@ -98,9 +99,12 @@ Mem-Booster intentionally does not disable or modify antivirus, Defender, Memory
 
 ## Requirements
 
+- Windows APP SDK
+Download from here: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads
+
 ### To run the published app
 
-If you use the general release build, no separate .NET runtime required.
+If you use the general release build, no separate .NET runtime is required.
 
 For Portable install:
 - **.NET 8 Desktop Runtime**
@@ -113,6 +117,7 @@ Install:
 - Visual Studio 2022
 - .NET 8 SDK
 - .NET desktop development workload
+- Windows APP SDK
 
 ---
 
