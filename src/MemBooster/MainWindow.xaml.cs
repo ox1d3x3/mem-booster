@@ -14,7 +14,7 @@ namespace MemBooster;
 
 public sealed partial class MainWindow : Window
 {
-    private const string CurrentVersion = "0.6.14";
+    private const string CurrentVersion = "0.6.15";
     private const string RepositoryUrl = "https://github.com/ox1d3x3/mem-booster";
 
     private readonly MemoryService _memoryService = new();
@@ -32,10 +32,12 @@ public sealed partial class MainWindow : Window
 
     private bool _syncingSelection;
     private bool _busyOperation;
+    private bool _isClosing;
     private bool _isDarkTheme = true;
     private bool _themeAnimationRunning;
     private string _searchText = string.Empty;
     private string? _pendingReleaseUrl;
+    private DispatcherTimer? _searchDebounceTimer;
 
     public ObservableCollection<ProcessGroup> ProcessGroups { get; } = new();
     public ObservableCollection<SelectedAppItem> SelectedApps { get; } = new();
@@ -74,6 +76,8 @@ public sealed partial class MainWindow : Window
 
         RootGrid.Loaded += async (_, _) =>
         {
+            _ = PlayEntranceAnimationAsync();
+
             await RefreshProcessesAsync("Initial load", true);
             _ = Task.Run(async () =>
             {
@@ -81,6 +85,104 @@ public sealed partial class MainWindow : Window
                 await CheckUpdatesAsync(silent: true);
             });
         };
+
+        Closed += (_, _) => _isClosing = true;
+    }
+
+    // ═══════════════════════════════════════════
+    // ENTRANCE + MICRO-INTERACTION ANIMATIONS
+    // ═══════════════════════════════════════════
+
+    private async Task PlayEntranceAnimationAsync()
+    {
+        await AnimateFadeSlideInAsync(HeaderCard, HeaderCardTranslate, 0);
+
+        await Task.WhenAll(
+            AnimateFadeSlideInAsync(MemoryCard, MemoryCardTranslate, 50),
+            AnimateFadeSlideInAsync(ProcessCard, ProcessCardTranslate, 100),
+            AnimateFadeSlideInAsync(SelectedCard, SelectedCardTranslate, 150),
+            AnimateFadeSlideInAsync(ProfileCard, ProfileCardTranslate, 200));
+
+        await Task.WhenAll(
+            AnimateFadeSlideInAsync(ToolbarCard, ToolbarCardTranslate, 0),
+            AnimateFadeSlideInAsync(ContentGrid, ContentGridTranslate, 60),
+            AnimateFadeSlideInAsync(StatusBar, StatusBarTranslate, 120));
+
+        _ = AnimateLogoPulseLoopAsync();
+    }
+
+    private static async Task AnimateFadeSlideInAsync(UIElement element, Microsoft.UI.Xaml.Media.TranslateTransform transform, int delayMs)
+    {
+        if (delayMs > 0)
+        {
+            await Task.Delay(delayMs);
+        }
+
+        var startY = transform.Y;
+        const int frames = 18;
+        for (var i = 1; i <= frames; i++)
+        {
+            var t = i / (double)frames;
+            var eased = 1d - Math.Pow(1d - t, 3d); // cubic ease-out
+            element.Opacity = eased;
+            transform.Y = startY * (1d - eased);
+            await Task.Delay(8);
+        }
+
+        element.Opacity = 1;
+        transform.Y = 0;
+    }
+
+    private async Task AnimateLogoPulseLoopAsync()
+    {
+        while (!_isClosing)
+        {
+            for (var i = 1; i <= 18 && !_isClosing; i++)
+            {
+                LogoPulseRing.Opacity = (i / 18d) * 0.55d;
+                await Task.Delay(20);
+            }
+            for (var i = 18; i >= 0 && !_isClosing; i--)
+            {
+                LogoPulseRing.Opacity = (i / 18d) * 0.55d;
+                await Task.Delay(20);
+            }
+            await Task.Delay(2600);
+        }
+    }
+
+    private async Task AnimateBoostButtonPressAsync()
+    {
+        const int frames = 9;
+        for (var i = 1; i <= frames; i++)
+        {
+            var t = i / (double)frames;
+            var scale = 1d - (0.06d * Math.Sin(t * Math.PI));
+            BoostButtonScale.ScaleX = scale;
+            BoostButtonScale.ScaleY = scale;
+            await Task.Delay(6);
+        }
+        BoostButtonScale.ScaleX = 1;
+        BoostButtonScale.ScaleY = 1;
+    }
+
+    private async Task AnimateBoostGlowAsync()
+    {
+        for (var pulse = 0; pulse < 3 && _busyOperation; pulse++)
+        {
+            for (var i = 1; i <= 10; i++)
+            {
+                BoostGlowRing.Opacity = i / 10d;
+                await Task.Delay(14);
+            }
+            for (var i = 10; i >= 0; i--)
+            {
+                BoostGlowRing.Opacity = i / 10d;
+                await Task.Delay(14);
+            }
+            await Task.Delay(90);
+        }
+        BoostGlowRing.Opacity = 0;
     }
 
     private void ApplyAdminState()
@@ -262,8 +364,8 @@ public sealed partial class MainWindow : Window
     {
         var query = _searchText.Trim();
 
-        ProcessGroups.Clear();
-
+        // Compute the target visible set in order.
+        var desired = new List<ProcessGroup>(_allProcessGroups.Count);
         foreach (var group in _allProcessGroups)
         {
             if (!string.IsNullOrWhiteSpace(query))
@@ -278,7 +380,34 @@ public sealed partial class MainWindow : Window
                 }
             }
 
-            ProcessGroups.Add(group);
+            desired.Add(group);
+        }
+
+        // Apply a minimal diff against the current ObservableCollection instead of
+        // Clear()+Add() — that rebuilds every ListView container and is the slow path.
+        // Removing stale rows and inserting new matches in place keeps containers alive
+        // and lets the built-in list transitions animate only what actually changed.
+        var desiredSet = new HashSet<ProcessGroup>(desired);
+
+        for (var i = ProcessGroups.Count - 1; i >= 0; i--)
+        {
+            if (!desiredSet.Contains(ProcessGroups[i]))
+            {
+                ProcessGroups.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < desired.Count; i++)
+        {
+            var target = desired[i];
+            if (i >= ProcessGroups.Count)
+            {
+                ProcessGroups.Add(target);
+            }
+            else if (!ReferenceEquals(ProcessGroups[i], target))
+            {
+                ProcessGroups.Insert(i, target);
+            }
         }
 
         ProcessCountTextBlock.Text = _allProcessGroups.Count.ToString();
@@ -288,7 +417,28 @@ public sealed partial class MainWindow : Window
     {
         var info = _memoryService.GetMemoryInfo();
         MemoryTextBlock.Text = info.Summary;
-        MemoryBar.Value = info.UsedPercent;
+        _ = AnimateMemoryBarAsync(info.UsedPercent);
+    }
+
+    private async Task AnimateMemoryBarAsync(double target)
+    {
+        var start = MemoryBar.Value;
+        var delta = target - start;
+        if (Math.Abs(delta) < 0.5d)
+        {
+            MemoryBar.Value = target;
+            return;
+        }
+
+        const int frames = 16;
+        for (var i = 1; i <= frames; i++)
+        {
+            var t = i / (double)frames;
+            var eased = 1d - Math.Pow(1d - t, 3d);
+            MemoryBar.Value = start + (delta * eased);
+            await Task.Delay(10);
+        }
+        MemoryBar.Value = target;
     }
 
     private void ProcessGroup_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -301,15 +451,69 @@ public sealed partial class MainWindow : Window
         if (group.IsSelected)
         {
             _selectedProcessNames.Add(group.ExeName);
+            AddSelectedAppItem(group);
         }
         else
         {
             _selectedProcessNames.Remove(group.ExeName);
+            RemoveSelectedAppItem(group.ExeName);
         }
 
-        UpdateSelectionSummary();
+        UpdateSelectionCounts();
     }
 
+    // Insert a single chip in the right place (sorted by working set, then name)
+    // instead of clearing and rebuilding the whole sidebar collection.
+    private void AddSelectedAppItem(ProcessGroup group)
+    {
+        var existing = SelectedApps.FirstOrDefault(a => string.Equals(a.ExeName, group.ExeName, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            return;
+        }
+
+        var item = new SelectedAppItem(
+            group.DisplayName,
+            group.ExeName,
+            $"{group.ExeName} • {group.MemoryText} • {group.InstanceCount} instance(s)");
+
+        var insertIndex = 0;
+        while (insertIndex < SelectedApps.Count)
+        {
+            var current = _allProcessGroups.FirstOrDefault(g => string.Equals(g.ExeName, SelectedApps[insertIndex].ExeName, StringComparison.OrdinalIgnoreCase));
+            var currentWeight = current?.WorkingSetBytes ?? 0;
+            if (group.WorkingSetBytes > currentWeight)
+            {
+                break;
+            }
+
+            insertIndex++;
+        }
+
+        SelectedApps.Insert(insertIndex, item);
+    }
+
+    private void RemoveSelectedAppItem(string exeName)
+    {
+        var existing = SelectedApps.FirstOrDefault(a => string.Equals(a.ExeName, exeName, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            SelectedApps.Remove(existing);
+        }
+    }
+
+    private void UpdateSelectionCounts()
+    {
+        var active = _allProcessGroups.Count(g => _selectedProcessNames.Contains(g.ExeName));
+        var total = _selectedProcessNames.Count;
+        var text = total == 0 ? "0 selected" : $"{active} active / {total} apps";
+        SelectedTextBlock.Text = text;
+        SelectedPanelTextBlock.Text = text;
+    }
+
+    // Full rebuild — used after bulk operations (refresh, Safe/Extreme/Aggressive
+    // Select, Load XML) where many items change at once. Single toggles use the
+    // incremental Add/Remove path above instead.
     private void UpdateSelectionSummary()
     {
         SelectedApps.Clear();
@@ -328,11 +532,7 @@ public sealed partial class MainWindow : Window
                 $"{group.ExeName} • {group.MemoryText} • {group.InstanceCount} instance(s)"));
         }
 
-        var active = selectedGroups.Count;
-        var total = _selectedProcessNames.Count;
-        var text = total == 0 ? "0 selected" : $"{active} active / {total} apps";
-        SelectedTextBlock.Text = text;
-        SelectedPanelTextBlock.Text = text;
+        UpdateSelectionCounts();
 
         _syncingSelection = true;
         try
@@ -370,7 +570,12 @@ public sealed partial class MainWindow : Window
 
         var running = _allProcessGroups.Count(g => _selectedProcessNames.Contains(g.ExeName));
         ProfileStatusTextBlock.Text = $"{mode}: {_selectedProcessNames.Count} selected, {running} currently running.";
-        _loggerService.WriteSelection($"WinUI {mode}", _selectedProcessNames, _allProcessGroups);
+
+        // Logging a bulk selection can write hundreds of lines. Snapshot the data and
+        // write it off the UI thread so Safe/Extreme/Aggressive Select stay instant.
+        var selectedSnapshot = _selectedProcessNames.ToArray();
+        var groupSnapshot = _allProcessGroups.ToArray();
+        _ = Task.Run(() => _loggerService.WriteSelection($"WinUI {mode}", selectedSnapshot, groupSnapshot));
     }
 
     private void ToggleProcess(ProcessGroup group)
@@ -399,7 +604,23 @@ public sealed partial class MainWindow : Window
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         _searchText = SearchBox.Text;
-        ApplyFilter();
+
+        // Debounce: only re-filter once the user pauses typing. This avoids a full
+        // list teardown/rebuild on every keystroke, which is the costly part.
+        _searchDebounceTimer ??= CreateSearchDebounceTimer();
+        _searchDebounceTimer.Stop();
+        _searchDebounceTimer.Start();
+    }
+
+    private DispatcherTimer CreateSearchDebounceTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(160) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            ApplyFilter();
+        };
+        return timer;
     }
 
     private void ProcessCheckBox_Click(object sender, RoutedEventArgs e)
@@ -423,8 +644,18 @@ public sealed partial class MainWindow : Window
         if (sender is Button { DataContext: SelectedAppItem item })
         {
             _selectedProcessNames.Remove(item.ExeName);
-            UpdateSelectionSummary();
-            ApplyFilter();
+            RemoveSelectedAppItem(item.ExeName);
+            UpdateSelectionCounts();
+
+            // Untick the matching row without rebuilding the whole list.
+            var group = _allProcessGroups.FirstOrDefault(g => string.Equals(g.ExeName, item.ExeName, StringComparison.OrdinalIgnoreCase));
+            if (group is not null && group.IsSelected)
+            {
+                _syncingSelection = true;
+                try { group.IsSelected = false; }
+                finally { _syncingSelection = false; }
+            }
+
             StatusTextBlock.Text = $"Removed {item.DisplayName}.";
         }
     }
@@ -456,7 +687,7 @@ public sealed partial class MainWindow : Window
         UpdateSelectionSummary();
         ApplyFilter();
         ProfileStatusTextBlock.Text = "Selection cleared.";
-        StatusTextBlock.Text = "Selected profile cleared.";
+        StatusTextBlock.Text = "Selection cleared.";
     }
 
     private async void PreviewButton_Click(object sender, RoutedEventArgs e)
@@ -479,6 +710,8 @@ public sealed partial class MainWindow : Window
         {
             return;
         }
+
+        _ = AnimateBoostButtonPressAsync();
 
         var runningTargets = _allProcessGroups
             .Where(p => _selectedProcessNames.Contains(p.ExeName))
@@ -531,6 +764,7 @@ public sealed partial class MainWindow : Window
 
         _busyOperation = true;
         _operationWatch.Restart();
+        _ = AnimateBoostGlowAsync();
 
         try
         {
@@ -604,13 +838,25 @@ public sealed partial class MainWindow : Window
 
     private void SaveLocalButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_selectedProcessNames.Count == 0)
+        {
+            StatusTextBlock.Text = "Nothing to save — select at least one app first.";
+            return;
+        }
+
         _profileService.SaveLocalProfile(_selectedProcessNames);
-        ProfileStatusTextBlock.Text = $"Local profile saved with {_selectedProcessNames.Count} app(s).";
-        StatusTextBlock.Text = "Local profile saved.";
+        ProfileStatusTextBlock.Text = $"Current profile saved with {_selectedProcessNames.Count} app(s).";
+        StatusTextBlock.Text = "Current profile saved to this PC.";
     }
 
     private async void ExportXmlButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_selectedProcessNames.Count == 0)
+        {
+            await ShowMessageAsync("Nothing to export", "Select at least one app before exporting a profile.");
+            return;
+        }
+
         try
         {
             var filePath = await PickSaveProfilePathAsync();
@@ -620,7 +866,7 @@ public sealed partial class MainWindow : Window
             }
 
             _profileService.SaveProfile(filePath, new ProfileData("Gaming Boost", _selectedProcessNames));
-            StatusTextBlock.Text = $"Profile exported: {Path.GetFileName(filePath)}";
+            StatusTextBlock.Text = $"Profile exported ({_selectedProcessNames.Count} app(s)): {Path.GetFileName(filePath)}";
         }
         catch (Exception ex)
         {

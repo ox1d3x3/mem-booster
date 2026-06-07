@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using MemBooster.Models;
@@ -244,60 +245,72 @@ public sealed class ProcessService
     public IReadOnlyList<ProcessGroupSnapshot> GetProcessGroups(Action<string>? trace = null)
     {
         var stopwatch = Stopwatch.StartNew();
-        var groups = new Dictionary<string, MutableProcessGroup>(StringComparer.OrdinalIgnoreCase);
         var currentPid = Environment.ProcessId;
-        var scanned = 0;
-        var skippedProtected = 0;
-        var skippedDeniedOrExited = 0;
 
-        foreach (var process in Process.GetProcesses())
+        var processes = Process.GetProcesses();
+        var scanned = processes.Length;
+
+        // Reading WorkingSet64 hits the kernel once per process and is the dominant
+        // cost of a scan. Doing it in parallel turns a serial wait into a fan-out,
+        // which is a large win on machines with hundreds of processes.
+        var partials = new ConcurrentBag<(string ExeName, long WorkingSet)>();
+        var protectedSkips = 0;
+        var deniedSkips = 0;
+
+        Parallel.ForEach(processes, process =>
         {
             try
             {
-                scanned++;
                 if (process.Id == currentPid)
                 {
-                    continue;
+                    return;
                 }
 
                 var exeName = SafetyRules.NormaliseProcessName(process.ProcessName);
                 if (string.IsNullOrWhiteSpace(exeName))
                 {
-                    continue;
+                    return;
                 }
 
                 // Hide hard-blocked core rows from the normal list to keep the UI useful and safe.
                 if (SafetyRules.IsBlocked(exeName))
                 {
-                    skippedProtected++;
-                    continue;
+                    Interlocked.Increment(ref protectedSkips);
+                    return;
                 }
 
-                if (!groups.TryGetValue(exeName, out var group))
-                {
-                    var risk = SafetyRules.GetRisk(exeName);
-                    group = new MutableProcessGroup(
-                        exeName,
-                        FriendlyNameFor(exeName),
-                        risk.CanSelect,
-                        SafetyRules.IsRecommendedForGamingBoost(exeName),
-                        risk.Label,
-                        risk.Description);
-                    groups.Add(exeName, group);
-                }
-
-                group.WorkingSetBytes += SafeWorkingSet(process);
-                group.InstanceCount++;
+                partials.Add((exeName, SafeWorkingSet(process)));
             }
             catch
             {
-                skippedDeniedOrExited++;
+                Interlocked.Increment(ref deniedSkips);
                 // Some protected processes deny access. Skip them instead of slowing or crashing the UI.
             }
             finally
             {
                 process.Dispose();
             }
+        });
+
+        // Aggregate the parallel results into groups on a single thread (cheap, no kernel calls).
+        var groups = new Dictionary<string, MutableProcessGroup>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (exeName, workingSet) in partials)
+        {
+            if (!groups.TryGetValue(exeName, out var group))
+            {
+                var risk = SafetyRules.GetRisk(exeName);
+                group = new MutableProcessGroup(
+                    exeName,
+                    FriendlyNameFor(exeName),
+                    risk.CanSelect,
+                    SafetyRules.IsRecommendedForGamingBoost(exeName),
+                    risk.Label,
+                    risk.Description);
+                groups.Add(exeName, group);
+            }
+
+            group.WorkingSetBytes += workingSet;
+            group.InstanceCount++;
         }
 
         var result = groups.Values
@@ -315,7 +328,7 @@ public sealed class ProcessService
             .ToList();
 
         stopwatch.Stop();
-        trace?.Invoke($"Process refresh scanned={scanned}; grouped={result.Count}; skippedProtected={skippedProtected}; skippedDeniedOrExited={skippedDeniedOrExited}; elapsedMs={stopwatch.ElapsedMilliseconds}");
+        trace?.Invoke($"Process refresh scanned={scanned}; grouped={result.Count}; skippedProtected={protectedSkips}; skippedDeniedOrExited={deniedSkips}; elapsedMs={stopwatch.ElapsedMilliseconds}");
         return result;
     }
 

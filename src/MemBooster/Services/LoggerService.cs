@@ -133,7 +133,6 @@ public sealed class LoggerService
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}{Environment.NewLine}";
             lock (_sync)
             {
