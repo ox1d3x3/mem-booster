@@ -8,7 +8,7 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2011-0078D4?logo=windows11&logoColor=white)](https://www.microsoft.com/windows)
 [![Framework](https://img.shields.io/badge/.NET%208-WinUI%203-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Version](https://img.shields.io/badge/version-0.6.15-22C55E)](https://github.com/ox1d3x3/mem-booster/releases)
+[![Version](https://img.shields.io/badge/version-0.6.16-22C55E)](https://github.com/ox1d3x3/mem-booster/releases)
 [![Build](https://img.shields.io/badge/build-self--contained%20x64-0F6B3E)](#build-from-source)
 
 *Created by **Ox1d3x3***

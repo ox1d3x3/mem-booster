@@ -14,7 +14,7 @@ namespace MemBooster;
 
 public sealed partial class MainWindow : Window
 {
-    private const string CurrentVersion = "0.6.15";
+    private const string CurrentVersion = "0.6.16";
     private const string RepositoryUrl = "https://github.com/ox1d3x3/mem-booster";
 
     private readonly MemoryService _memoryService = new();
@@ -303,24 +303,42 @@ public sealed partial class MainWindow : Window
             RefreshMemory();
 
             var snapshots = await Task.Run(() => _processService.GetProcessGroups());
-            var ordered = snapshots
-                .Select(s =>
-                {
-                    var group = new ProcessGroup(s.ExeName);
-                    group.UpdateFrom(s, _selectedProcessNames.Contains(s.ExeName));
-                    group.PropertyChanged += ProcessGroup_PropertyChanged;
-                    return group;
-                })
-                .OrderByDescending(g => g.WorkingSetBytes)
-                .ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+
+            // Reuse existing ProcessGroup instances by exe name instead of recreating
+            // everything: UpdateFrom mutates in place, so unchanged rows keep the same
+            // object reference. Combined with the in-place diff in ApplyFilter, a
+            // refresh only touches ListView containers for rows that actually changed,
+            // instead of tearing down and rebuilding the whole list.
+            var existingByName = _allProcessGroups.ToDictionary(g => g.ExeName, StringComparer.OrdinalIgnoreCase);
 
             _syncingSelection = true;
+            List<ProcessGroup> ordered;
             try
             {
-                foreach (var group in _allProcessGroups)
+                ordered = snapshots
+                    .Select(s =>
+                    {
+                        if (existingByName.TryGetValue(s.ExeName, out var group))
+                        {
+                            existingByName.Remove(s.ExeName);
+                        }
+                        else
+                        {
+                            group = new ProcessGroup(s.ExeName);
+                            group.PropertyChanged += ProcessGroup_PropertyChanged;
+                        }
+
+                        group.UpdateFrom(s, _selectedProcessNames.Contains(s.ExeName));
+                        return group;
+                    })
+                    .OrderByDescending(g => g.WorkingSetBytes)
+                    .ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                // Whatever is left in existingByName is no longer running: unsubscribe.
+                foreach (var gone in existingByName.Values)
                 {
-                    group.PropertyChanged -= ProcessGroup_PropertyChanged;
+                    gone.PropertyChanged -= ProcessGroup_PropertyChanged;
                 }
 
                 _allProcessGroups.Clear();
@@ -372,6 +390,7 @@ public sealed partial class MainWindow : Window
             {
                 var match = group.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
                             || group.ExeName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                            || group.Publisher.Contains(query, StringComparison.OrdinalIgnoreCase)
                             || group.RiskLabel.Contains(query, StringComparison.OrdinalIgnoreCase);
 
                 if (!match)
@@ -410,14 +429,67 @@ public sealed partial class MainWindow : Window
             }
         }
 
-        ProcessCountTextBlock.Text = _allProcessGroups.Count.ToString();
+        _ = AnimateProcessCountAsync(_allProcessGroups.Count);
+    }
+
+    private int _displayedProcessCount;
+    private int _processCountAnimVersion;
+
+    // Count-up/down animation for the Running apps stat. A version stamp cancels any
+    // in-flight animation when a newer one starts, so rapid refreshes never fight.
+    private async Task AnimateProcessCountAsync(int target)
+    {
+        var version = ++_processCountAnimVersion;
+        var start = _displayedProcessCount;
+        if (start == target)
+        {
+            ProcessCountTextBlock.Text = target.ToString();
+            return;
+        }
+
+        const int frames = 14;
+        for (var i = 1; i <= frames; i++)
+        {
+            if (version != _processCountAnimVersion)
+            {
+                return;
+            }
+
+            var t = i / (double)frames;
+            var eased = 1d - Math.Pow(1d - t, 3d);
+            _displayedProcessCount = (int)Math.Round(start + ((target - start) * eased));
+            ProcessCountTextBlock.Text = _displayedProcessCount.ToString();
+            await Task.Delay(14);
+        }
+
+        _displayedProcessCount = target;
+        ProcessCountTextBlock.Text = target.ToString();
     }
 
     private void RefreshMemory()
     {
         var info = _memoryService.GetMemoryInfo();
         MemoryTextBlock.Text = info.Summary;
+        ApplyMemoryBarColor(info.UsedPercent);
         _ = AnimateMemoryBarAsync(info.UsedPercent);
+    }
+
+    // Green while comfortable, amber under pressure, red when critical — an instant
+    // visual read on whether a boost is worth running.
+    private void ApplyMemoryBarColor(double usedPercent)
+    {
+        var color = usedPercent >= 85d
+            ? Windows.UI.Color.FromArgb(255, 0xEF, 0x44, 0x44)
+            : usedPercent >= 60d
+                ? Windows.UI.Color.FromArgb(255, 0xF5, 0x9E, 0x0B)
+                : Windows.UI.Color.FromArgb(255, 0x22, 0xC5, 0x5E);
+
+        if (MemoryBar.Foreground is SolidColorBrush brush && brush.Color == color)
+        {
+            return;
+        }
+
+        MemoryBar.Foreground = new SolidColorBrush(color);
     }
 
     private async Task AnimateMemoryBarAsync(double target)
@@ -475,7 +547,7 @@ public sealed partial class MainWindow : Window
         var item = new SelectedAppItem(
             group.DisplayName,
             group.ExeName,
-            $"{group.ExeName} • {group.MemoryText} • {group.InstanceCount} instance(s)");
+            $"{group.ExeName} • {group.MemoryText} • {group.Publisher}");
 
         var insertIndex = 0;
         while (insertIndex < SelectedApps.Count)
@@ -504,11 +576,38 @@ public sealed partial class MainWindow : Window
 
     private void UpdateSelectionCounts()
     {
-        var active = _allProcessGroups.Count(g => _selectedProcessNames.Contains(g.ExeName));
+        var running = 0;
+        long reclaimableBytes = 0;
+        foreach (var group in _allProcessGroups)
+        {
+            if (_selectedProcessNames.Contains(group.ExeName))
+            {
+                running++;
+                reclaimableBytes += group.WorkingSetBytes;
+            }
+        }
+
         var total = _selectedProcessNames.Count;
-        var text = total == 0 ? "0 selected" : $"{active} active / {total} apps";
+        var text = total == 0 ? "0 selected" : $"{running} active / {total} apps";
         SelectedTextBlock.Text = text;
         SelectedPanelTextBlock.Text = text;
+
+        // Estimated RAM the boost would free right now — the number gamers care about.
+        if (reclaimableBytes > 0)
+        {
+            SelectedReclaimTextBlock.Text = $"\u2248 {FormatBytesShort(reclaimableBytes)} reclaimable";
+            SelectedReclaimTextBlock.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            SelectedReclaimTextBlock.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static string FormatBytesShort(long bytes)
+    {
+        var mb = bytes / 1024d / 1024d;
+        return mb >= 1024d ? $"{mb / 1024d:0.0} GB" : $"{mb:0} MB";
     }
 
     // Full rebuild — used after bulk operations (refresh, Safe/Extreme/Aggressive
@@ -529,7 +628,7 @@ public sealed partial class MainWindow : Window
             SelectedApps.Add(new SelectedAppItem(
                 group.DisplayName,
                 group.ExeName,
-                $"{group.ExeName} • {group.MemoryText} • {group.InstanceCount} instance(s)"));
+                $"{group.ExeName} • {group.MemoryText} • {group.Publisher}"));
         }
 
         UpdateSelectionCounts();
@@ -556,20 +655,39 @@ public sealed partial class MainWindow : Window
     {
         _selectedProcessNames.Clear();
 
+        // Round-trip rule: anything the user can manually tick in the UI must survive
+        // save -> load. Only hard-blocked (protected) names are refused, matching the
+        // manual selection rules exactly. Safe/Extreme/Aggressive stay unaffected —
+        // their input lists are already pre-filtered before reaching here.
+        var skippedProtected = 0;
         foreach (var exe in executableNames)
         {
             var name = SafetyRules.NormaliseProcessName(exe);
-            if (!string.IsNullOrWhiteSpace(name) && SafetyRules.IsAutoLoadProfileAllowed(name))
+            if (string.IsNullOrWhiteSpace(name))
             {
-                _selectedProcessNames.Add(name);
+                continue;
             }
+
+            if (SafetyRules.IsBlocked(name))
+            {
+                skippedProtected++;
+                continue;
+            }
+
+            _selectedProcessNames.Add(name);
         }
 
         UpdateSelectionSummary();
         ApplyFilter();
 
         var running = _allProcessGroups.Count(g => _selectedProcessNames.Contains(g.ExeName));
-        ProfileStatusTextBlock.Text = $"{mode}: {_selectedProcessNames.Count} selected, {running} currently running.";
+        var summary = $"{mode}: {_selectedProcessNames.Count} selected, {running} currently running.";
+        if (skippedProtected > 0)
+        {
+            summary += $" Skipped {skippedProtected} protected entr{(skippedProtected == 1 ? "y" : "ies")}.";
+        }
+
+        ProfileStatusTextBlock.Text = summary;
 
         // Logging a bulk selection can write hundreds of lines. Snapshot the data and
         // write it off the UI thread so Safe/Extreme/Aggressive Select stay instant.

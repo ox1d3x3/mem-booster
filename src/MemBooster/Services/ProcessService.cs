@@ -250,9 +250,9 @@ public sealed class ProcessService
         var processes = Process.GetProcesses();
         var scanned = processes.Length;
 
-        // Reading WorkingSet64 hits the kernel once per process and is the dominant
-        // cost of a scan. Doing it in parallel turns a serial wait into a fan-out,
-        // which is a large win on machines with hundreds of processes.
+        // Publisher (CompanyName from file version info) is read at most once per unique
+        // exe name and cached for the whole app session — version-resource reads hit the
+        // disk, so repeat refreshes must not pay that cost again.
         var partials = new ConcurrentBag<(string ExeName, long WorkingSet)>();
         var protectedSkips = 0;
         var deniedSkips = 0;
@@ -278,6 +278,8 @@ public sealed class ProcessService
                     Interlocked.Increment(ref protectedSkips);
                     return;
                 }
+
+                CachePublisherIfNeeded(exeName, process);
 
                 partials.Add((exeName, SafeWorkingSet(process)));
             }
@@ -317,6 +319,7 @@ public sealed class ProcessService
             .Select(g => new ProcessGroupSnapshot(
                 g.ExeName,
                 g.DisplayName,
+                PublisherFor(g.ExeName),
                 g.WorkingSetBytes,
                 g.InstanceCount,
                 g.CanSelect,
@@ -679,6 +682,50 @@ public sealed class ProcessService
         {
             return 0;
         }
+    }
+
+    // exeName -> publisher (CompanyName). Session-lifetime cache: one version-info
+    // read per unique exe. Empty string means "tried, unknown"; a later instance
+    // that we CAN read (e.g. non-elevated) may overwrite an empty result.
+    private static readonly ConcurrentDictionary<string, string> PublisherCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private static void CachePublisherIfNeeded(string exeName, Process process)
+    {
+        if (PublisherCache.TryGetValue(exeName, out var cached) && !string.IsNullOrEmpty(cached))
+        {
+            return;
+        }
+
+        try
+        {
+            var path = TryGetMainModulePath(process);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                PublisherCache.TryAdd(exeName, string.Empty);
+                return;
+            }
+
+            var company = FileVersionInfo.GetVersionInfo(path).CompanyName?.Trim() ?? string.Empty;
+            if (company.Length > 0)
+            {
+                PublisherCache[exeName] = company;
+            }
+            else
+            {
+                PublisherCache.TryAdd(exeName, string.Empty);
+            }
+        }
+        catch
+        {
+            PublisherCache.TryAdd(exeName, string.Empty);
+        }
+    }
+
+    private static string PublisherFor(string exeName)
+    {
+        return PublisherCache.TryGetValue(exeName, out var value) && value.Length > 0
+            ? value
+            : "Unknown publisher";
     }
 
     private static string? TryGetMainModulePath(Process process)

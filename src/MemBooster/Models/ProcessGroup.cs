@@ -6,6 +6,7 @@ namespace MemBooster.Models;
 public sealed class ProcessGroup : INotifyPropertyChanged
 {
     private string _displayName = string.Empty;
+    private string _publisher = string.Empty;
     private long _workingSetBytes;
     private int _instanceCount;
     private bool _isSelected;
@@ -20,6 +21,12 @@ public sealed class ProcessGroup : INotifyPropertyChanged
     {
         get => _displayName;
         set => SetField(ref _displayName, value);
+    }
+
+    public string Publisher
+    {
+        get => _publisher;
+        set => SetField(ref _publisher, value);
     }
 
     public long WorkingSetBytes
@@ -99,6 +106,7 @@ public sealed class ProcessGroup : INotifyPropertyChanged
     public void UpdateFrom(ProcessGroupSnapshot snapshot, bool selected)
     {
         DisplayName = snapshot.DisplayName;
+        Publisher = snapshot.Publisher;
         WorkingSetBytes = snapshot.WorkingSetBytes;
         InstanceCount = snapshot.InstanceCount;
         CanSelect = snapshot.CanSelect;
@@ -139,6 +147,7 @@ public sealed class ProcessGroup : INotifyPropertyChanged
 public sealed record ProcessGroupSnapshot(
     string ExeName,
     string DisplayName,
+    string Publisher,
     long WorkingSetBytes,
     int InstanceCount,
     bool CanSelect,
