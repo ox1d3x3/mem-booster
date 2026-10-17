@@ -29,6 +29,20 @@ public sealed class LoggerService
 
     public void WriteDeviceOptimise(string message) => WriteLine(DeviceOptimiseLogPath, message);
 
+    public string ServicesLogPath => Path.Combine(_logDirectory, "services.log");
+
+    public void WriteServices(string message) => WriteLine(ServicesLogPath, message);
+
+    // One locked append for a whole batch instead of one file open per line.
+    public void WritePerformanceBatch(IEnumerable<string> messages) => WriteLines(PerformanceLogPath, messages);
+
+    public void WriteServicesBatch(IEnumerable<string> messages) => WriteLines(ServicesLogPath, messages);
+
+    // Buffered lines keep the time they were recorded, not the time they were flushed.
+    public void WritePerformanceBatch(LogBuffer buffer) => WriteStampedLines(PerformanceLogPath, buffer.Drain());
+
+    public void WriteServicesBatch(LogBuffer buffer) => WriteStampedLines(ServicesLogPath, buffer.Drain());
+
     public LogOperationScope BeginOperation(string operationName, string? metadata = null)
     {
         return new LogOperationScope(this, operationName, metadata);
@@ -38,36 +52,23 @@ public sealed class LoggerService
     {
         var summary = $"Boost profile=[{selected}] => {result.Summary}";
         Write(summary);
-        WriteLine(BoostLogPath, summary);
-
-        foreach (var line in result.Messages.Take(400))
-        {
-            WriteLine(BoostLogPath, "  " + line);
-        }
+        WriteLines(BoostLogPath, result.Messages.Take(400).Select(line => "  " + line).Prepend(summary));
     }
 
     public void WriteRestoreCapture(IReadOnlyList<RestoreEntry> entries)
     {
         var header = $"Restore capture entries={entries.Count}";
         Write(header);
-        WriteLine(BoostLogPath, header);
-
-        foreach (var entry in entries.Take(500))
-        {
-            WriteLine(BoostLogPath, $"  capture: {entry.DisplayName} | {entry.ExeName} | {entry.FilePath}");
-        }
+        WriteLines(BoostLogPath, entries.Take(500)
+            .Select(entry => $"  capture: {entry.DisplayName} | {entry.ExeName} | {entry.FilePath}")
+            .Prepend(header));
     }
 
     public void WriteRestoreResult(IReadOnlyList<RestoreEntry> entries, RestoreResult result)
     {
         var header = $"Restore requested entries={entries.Count} => {result.Summary}";
         Write(header);
-        WriteLine(BoostLogPath, header);
-
-        foreach (var line in result.Messages.Take(400))
-        {
-            WriteLine(BoostLogPath, "  " + line);
-        }
+        WriteLines(BoostLogPath, result.Messages.Take(400).Select(line => "  " + line).Prepend(header));
     }
 
     public void WriteSelection(string mode, IReadOnlyCollection<string> selectedNames, IEnumerable<ProcessGroup> processGroups)
@@ -76,17 +77,17 @@ public sealed class LoggerService
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var selectedSet = new HashSet<string>(selected, StringComparer.OrdinalIgnoreCase);
         var running = processGroups
-            .Where(p => selected.Contains(p.ExeName, StringComparer.OrdinalIgnoreCase))
+            .Where(p => selectedSet.Contains(p.ExeName))
             .OrderByDescending(p => p.WorkingSetBytes)
             .ToList();
 
         var estimatedRam = running.Sum(p => p.WorkingSetBytes);
-        Write($"Selection mode={mode}; selected={selected.Count}; runningMatches={running.Count}; estimatedWorkingSet={FormatBytes(estimatedRam)}");
-        foreach (var process in running.Take(250))
-        {
-            Write($"  selected-running: {process.DisplayName} | {process.ExeName} | {process.MemoryText} | instances={process.InstanceCount} | status={process.RiskLabel}");
-        }
+        var header = $"Selection mode={mode}; selected={selected.Count}; runningMatches={running.Count}; estimatedWorkingSet={FormatBytes(estimatedRam)}";
+        WriteLines(ActivityLogPath, running.Take(250)
+            .Select(process => $"  selected-running: {process.DisplayName} | {process.ExeName} | {process.MemoryText} | instances={process.InstanceCount} | status={process.RiskLabel}")
+            .Prepend(header));
     }
 
     public string WriteProcessSnapshot(string label, IEnumerable<ProcessGroup> processGroups, IReadOnlyCollection<string>? selectedNames = null)
@@ -94,7 +95,8 @@ public sealed class LoggerService
         Directory.CreateDirectory(SnapshotDirectory);
         var safeLabel = string.Concat(label.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '-'));
         var path = Path.Combine(SnapshotDirectory, $"{DateTime.Now:yyyyMMdd-HHmmssfff}-{safeLabel}.csv");
-        var selected = selectedNames ?? Array.Empty<string>();
+        var selected = new HashSet<string>(selectedNames ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        var timestamp = Csv(DateTime.Now.ToString("O"));
 
         var builder = new StringBuilder();
         builder.AppendLine("Timestamp,Label,Selected,CanSelect,DisplayName,ExeName,WorkingSetBytes,WorkingSetText,Instances,Status,Description");
@@ -102,9 +104,9 @@ public sealed class LoggerService
         {
             builder.AppendLine(string.Join(",", new[]
             {
-                Csv(DateTime.Now.ToString("O")),
+                timestamp,
                 Csv(label),
-                Csv((process.IsSelected || selected.Contains(process.ExeName, StringComparer.OrdinalIgnoreCase)).ToString()),
+                Csv((process.IsSelected || selected.Contains(process.ExeName)).ToString()),
                 Csv(process.CanSelect.ToString()),
                 Csv(process.DisplayName),
                 Csv(process.ExeName),
@@ -138,6 +140,61 @@ public sealed class LoggerService
             {
                 RotateIfOversized(path);
                 File.AppendAllText(path, line, Encoding.UTF8);
+            }
+        }
+        catch
+        {
+            // Logging must never break the app.
+        }
+    }
+
+    private void WriteLines(string path, IEnumerable<string> messages)
+    {
+        try
+        {
+            var stamp = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ";
+            var builder = new StringBuilder();
+            foreach (var message in messages)
+            {
+                builder.Append(stamp).Append(message).Append(Environment.NewLine);
+            }
+
+            if (builder.Length == 0)
+            {
+                return;
+            }
+
+            lock (_sync)
+            {
+                RotateIfOversized(path);
+                File.AppendAllText(path, builder.ToString(), Encoding.UTF8);
+            }
+        }
+        catch
+        {
+            // Logging must never break the app.
+        }
+    }
+
+    private void WriteStampedLines(string path, IReadOnlyList<string> stampedLines)
+    {
+        if (stampedLines.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var builder = new StringBuilder();
+            foreach (var line in stampedLines)
+            {
+                builder.Append(line).Append(Environment.NewLine);
+            }
+
+            lock (_sync)
+            {
+                RotateIfOversized(path);
+                File.AppendAllText(path, builder.ToString(), Encoding.UTF8);
             }
         }
         catch
@@ -220,5 +277,30 @@ public sealed class LogOperationScope : IDisposable
         _disposed = true;
         _stopwatch.Stop();
         _logger.WriteOperationEvent(OperationId, OperationName, "END", _stopwatch.Elapsed);
+    }
+}
+
+/// <summary>
+/// Thread-safe in-memory log buffer. Each line is timestamped when it is added, so a
+/// batch written later still shows when every event actually happened.
+/// </summary>
+public sealed class LogBuffer
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _lines = new();
+
+    public void Add(string message)
+    {
+        _lines.Enqueue($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+    }
+
+    public IReadOnlyList<string> Drain()
+    {
+        var drained = new List<string>(_lines.Count);
+        while (_lines.TryDequeue(out var line))
+        {
+            drained.Add(line);
+        }
+
+        return drained;
     }
 }

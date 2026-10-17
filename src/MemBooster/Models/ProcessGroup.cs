@@ -103,6 +103,23 @@ public sealed class ProcessGroup : INotifyPropertyChanged
         ExeName = exeName;
     }
 
+    /// <summary>True when this app came straight back after a previous boost closed it.</summary>
+    public bool Respawns { get; private set; }
+
+    /// <summary>
+    /// Overrides the status after <see cref="UpdateFrom"/> (which resets it) when the app
+    /// is known to come back after being closed.
+    /// </summary>
+    public void ApplyRespawnTag(bool respawns)
+    {
+        Respawns = respawns;
+        if (respawns)
+        {
+            RiskLabel = "Respawns";
+            RiskDescription = "Came straight back after the last boost; closing it doesn't last";
+        }
+    }
+
     public void UpdateFrom(ProcessGroupSnapshot snapshot, bool selected)
     {
         DisplayName = snapshot.DisplayName;

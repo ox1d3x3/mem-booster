@@ -17,14 +17,15 @@
     <SelfContained>true</SelfContained>
     <AssemblyName>Mem-Booster</AssemblyName>
     <ApplicationIcon>Assets\mem-booster.ico</ApplicationIcon>
-    <Version>0.6.16</Version>
-    <FileVersion>0.6.16.0</FileVersion>
+    <Version>0.6.19</Version>
+    <FileVersion>0.6.19.0</FileVersion>
     <Product>Mem-Booster by Ox1d3x3</Product>
     <Authors>Ox1d3x3</Authors>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
   </ItemGroup>
 
   <ItemGroup>

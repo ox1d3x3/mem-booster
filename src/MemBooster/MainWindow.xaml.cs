@@ -14,7 +14,7 @@ namespace MemBooster;
 
 public sealed partial class MainWindow : Window
 {
-    private const string CurrentVersion = "0.6.16";
+    private const string CurrentVersion = "0.6.19";
     private const string RepositoryUrl = "https://github.com/ox1d3x3/mem-booster";
 
     private readonly MemoryService _memoryService = new();
@@ -24,6 +24,15 @@ public sealed partial class MainWindow : Window
     private readonly UpdateService _updateService = new();
     private readonly DiagnosticsService _diagnosticsService;
     private readonly DeviceOptimizationService _deviceOptimizationService;
+    private readonly ServiceControlService _serviceControlService;
+    private readonly RespawnTracker _respawnTracker;
+
+    // Boost session state: the long warning is shown once per session, then repeats are
+    // instant. A new app service that would be stopped always re-shows the warning.
+    private bool _boostWarningAcknowledged;
+    private bool _continueWithoutAdmin;
+    private readonly HashSet<string> _acknowledgedAppServices = new(StringComparer.OrdinalIgnoreCase);
+    private int _boostVersion;
 
     private readonly HashSet<string> _selectedProcessNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ProcessGroup> _allProcessGroups = new();
@@ -53,6 +62,8 @@ public sealed partial class MainWindow : Window
         _loggerService = new LoggerService(_appDataDirectory);
         _diagnosticsService = new DiagnosticsService();
         _deviceOptimizationService = new DeviceOptimizationService(_appDataDirectory);
+        _serviceControlService = new ServiceControlService(_appDataDirectory);
+        _respawnTracker = new RespawnTracker(_appDataDirectory);
 
         ProcessesList.ItemsSource = ProcessGroups;
         SelectedList.ItemsSource = SelectedApps;
@@ -73,6 +84,7 @@ public sealed partial class MainWindow : Window
 
         _profileService.ClearRestoreSession();
         RevertDeviceOptimiseButton.IsEnabled = _deviceOptimizationService.HasActiveState();
+        RestoreServicesButton.IsEnabled = _serviceControlService.HasStoppedServices();
 
         RootGrid.Loaded += async (_, _) =>
         {
@@ -284,6 +296,122 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // Single scan-and-merge path used by every refresh (manual, initial, post-boost),
+    // so all of them get instance reuse and the in-place list diff.
+    private async Task ReloadProcessGroupsAsync()
+    {
+        var snapshots = await Task.Run(() => _processService.GetProcessGroups());
+
+        // Reuse existing ProcessGroup instances by exe name instead of recreating
+        // everything: UpdateFrom mutates in place, so unchanged rows keep the same
+        // object reference. Combined with the in-place diff in ApplyFilter, a
+        // refresh only touches ListView containers for rows that actually changed,
+        // instead of tearing down and rebuilding the whole list.
+        var existingByName = _allProcessGroups.ToDictionary(g => g.ExeName, StringComparer.OrdinalIgnoreCase);
+
+        _syncingSelection = true;
+        List<ProcessGroup> ordered;
+        try
+        {
+            ordered = snapshots
+                .Select(s =>
+                {
+                    if (existingByName.TryGetValue(s.ExeName, out var group))
+                    {
+                        existingByName.Remove(s.ExeName);
+                    }
+                    else
+                    {
+                        group = new ProcessGroup(s.ExeName);
+                        group.PropertyChanged += ProcessGroup_PropertyChanged;
+                    }
+
+                    group.UpdateFrom(s, _selectedProcessNames.Contains(s.ExeName));
+                    group.ApplyRespawnTag(_respawnTracker.IsRespawner(s.ExeName));
+                    return group;
+                })
+                .OrderByDescending(g => g.WorkingSetBytes)
+                .ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // Whatever is left in existingByName is no longer running: unsubscribe.
+            foreach (var gone in existingByName.Values)
+            {
+                gone.PropertyChanged -= ProcessGroup_PropertyChanged;
+            }
+
+            _allProcessGroups.Clear();
+            _allProcessGroups.AddRange(ordered);
+        }
+        finally
+        {
+            _syncingSelection = false;
+        }
+
+        ApplyFilter();
+        UpdateSelectionSummary();
+
+        // List is on screen now; fill in publishers in the background.
+        _ = ResolvePublishersAsync();
+    }
+
+    private static string BuildChipSubtitle(ProcessGroup group)
+    {
+        return string.IsNullOrEmpty(group.Publisher)
+            ? $"{group.ExeName} • {group.MemoryText}"
+            : $"{group.ExeName} • {group.MemoryText} • {group.Publisher}";
+    }
+
+    private async Task ResolvePublishersAsync()
+    {
+        if (!_processService.HasPendingPublishers)
+        {
+            return;
+        }
+
+        IReadOnlyDictionary<string, string> resolved;
+        try
+        {
+            resolved = await Task.Run(() => _processService.ResolvePendingPublishers());
+        }
+        catch (Exception ex)
+        {
+            _loggerService.Write($"Publisher lookup failed: {ex.Message}");
+            return;
+        }
+
+        if (resolved.Count == 0 || _isClosing)
+        {
+            return;
+        }
+
+        foreach (var group in _allProcessGroups)
+        {
+            if (!resolved.TryGetValue(group.ExeName, out var publisher) || group.Publisher == publisher)
+            {
+                continue;
+            }
+
+            group.Publisher = publisher; // Row updates via INotifyPropertyChanged.
+
+            // Swap just this chip so the sidebar doesn't re-animate every item.
+            for (var i = 0; i < SelectedApps.Count; i++)
+            {
+                if (string.Equals(SelectedApps[i].ExeName, group.ExeName, StringComparison.OrdinalIgnoreCase))
+                {
+                    SelectedApps[i] = new SelectedAppItem(group.DisplayName, group.ExeName, BuildChipSubtitle(group));
+                    break;
+                }
+            }
+        }
+
+        // Publisher is searchable, so re-apply an active search with the new data.
+        if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            ApplyFilter();
+        }
+    }
+
     private async Task RefreshProcessesAsync(string context, bool showProgress)
     {
         if (_busyOperation)
@@ -302,55 +430,7 @@ public sealed partial class MainWindow : Window
 
             RefreshMemory();
 
-            var snapshots = await Task.Run(() => _processService.GetProcessGroups());
-
-            // Reuse existing ProcessGroup instances by exe name instead of recreating
-            // everything: UpdateFrom mutates in place, so unchanged rows keep the same
-            // object reference. Combined with the in-place diff in ApplyFilter, a
-            // refresh only touches ListView containers for rows that actually changed,
-            // instead of tearing down and rebuilding the whole list.
-            var existingByName = _allProcessGroups.ToDictionary(g => g.ExeName, StringComparer.OrdinalIgnoreCase);
-
-            _syncingSelection = true;
-            List<ProcessGroup> ordered;
-            try
-            {
-                ordered = snapshots
-                    .Select(s =>
-                    {
-                        if (existingByName.TryGetValue(s.ExeName, out var group))
-                        {
-                            existingByName.Remove(s.ExeName);
-                        }
-                        else
-                        {
-                            group = new ProcessGroup(s.ExeName);
-                            group.PropertyChanged += ProcessGroup_PropertyChanged;
-                        }
-
-                        group.UpdateFrom(s, _selectedProcessNames.Contains(s.ExeName));
-                        return group;
-                    })
-                    .OrderByDescending(g => g.WorkingSetBytes)
-                    .ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                // Whatever is left in existingByName is no longer running: unsubscribe.
-                foreach (var gone in existingByName.Values)
-                {
-                    gone.PropertyChanged -= ProcessGroup_PropertyChanged;
-                }
-
-                _allProcessGroups.Clear();
-                _allProcessGroups.AddRange(ordered);
-            }
-            finally
-            {
-                _syncingSelection = false;
-            }
-
-            ApplyFilter();
-            UpdateSelectionSummary();
+            await ReloadProcessGroupsAsync();
 
             watch.Stop();
             StatusTextBlock.Text = $"Running apps refreshed in {watch.ElapsedMilliseconds} ms.";
@@ -362,7 +442,7 @@ public sealed partial class MainWindow : Window
             if (showProgress)
             {
                 ShowProgress($"Loaded {ProcessGroups.Count} app group(s)", 100);
-                await Task.Delay(300);
+                await Task.Delay(120);
             }
         }
         catch (Exception ex)
@@ -547,7 +627,7 @@ public sealed partial class MainWindow : Window
         var item = new SelectedAppItem(
             group.DisplayName,
             group.ExeName,
-            $"{group.ExeName} • {group.MemoryText} • {group.Publisher}");
+            BuildChipSubtitle(group));
 
         var insertIndex = 0;
         while (insertIndex < SelectedApps.Count)
@@ -583,7 +663,12 @@ public sealed partial class MainWindow : Window
             if (_selectedProcessNames.Contains(group.ExeName))
             {
                 running++;
-                reclaimableBytes += group.WorkingSetBytes;
+
+                // Apps that come straight back don't free memory for long; leave them out.
+                if (!group.Respawns)
+                {
+                    reclaimableBytes += group.WorkingSetBytes;
+                }
             }
         }
 
@@ -628,7 +713,7 @@ public sealed partial class MainWindow : Window
             SelectedApps.Add(new SelectedAppItem(
                 group.DisplayName,
                 group.ExeName,
-                $"{group.ExeName} • {group.MemoryText} • {group.Publisher}"));
+                BuildChipSubtitle(group)));
         }
 
         UpdateSelectionCounts();
@@ -841,14 +926,19 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (!AdminService.IsCurrentProcessElevated())
+        var elevated = AdminService.IsCurrentProcessElevated();
+        if (!elevated && !_continueWithoutAdmin)
         {
             var adminChoice = await ShowConfirmAsync(
                 "Run as administrator?",
-                "Mem-Booster is currently in Standard mode. Some elevated apps may refuse to close. Relaunch as administrator now?",
+                "Mem-Booster is currently in Standard mode. Some elevated apps may refuse to close, and app services can't be stopped. Relaunch as administrator now?",
                 "Relaunch",
                 "Continue");
-            if (adminChoice)
+            if (!adminChoice)
+            {
+                _continueWithoutAdmin = true; // Don't ask again this session.
+            }
+            else
             {
                 try
                 {
@@ -867,17 +957,52 @@ public sealed partial class MainWindow : Window
             }
         }
 
-        var selectedMemory = runningTargets.Sum(p => p.WorkingSetBytes);
-        var warning = $"Mem-Booster will close {runningTargets.Count} selected running app group(s).{Environment.NewLine}{Environment.NewLine}" +
-                      $"Estimated selected working set: {FormatBytes(selectedMemory)}{Environment.NewLine}{Environment.NewLine}" +
-                      "Save your work first. Heavy boost may stop background sync, helpers, web views, editors or work apps. " +
-                      "Restart Windows after gaming if you want the normal background-app state back.";
-
-        var accepted = await ShowTimedWarningAsync("Boost Now Warning", warning, 5);
-        if (!accepted)
+        // Selected apps that run as Windows services get stopped through the Service
+        // Control Manager instead of killed: a killed service is restarted by Windows
+        // within seconds, a stopped one stays stopped. Needs admin, so only when elevated.
+        var selectionForServices = _selectedProcessNames.ToArray();
+        IReadOnlyList<AppServiceTarget> appServices = Array.Empty<AppServiceTarget>();
+        if (elevated)
         {
-            StatusTextBlock.Text = "Boost cancelled.";
-            return;
+            try
+            {
+                appServices = await Task.Run(() => _serviceControlService.FindServicesForApps(selectionForServices));
+            }
+            catch (Exception ex)
+            {
+                _loggerService.WriteServices($"App service lookup failed: {ex.Message}");
+            }
+        }
+
+        var unseenServices = appServices.Where(t => !_acknowledgedAppServices.Contains(t.ServiceName)).ToList();
+        if (!_boostWarningAcknowledged || unseenServices.Count > 0)
+        {
+            var selectedMemory = runningTargets.Sum(p => p.WorkingSetBytes);
+            var warning = $"Mem-Booster will close {runningTargets.Count} selected running app group(s).{Environment.NewLine}{Environment.NewLine}" +
+                          $"Estimated selected working set: {FormatBytes(selectedMemory)}{Environment.NewLine}{Environment.NewLine}";
+
+            if (appServices.Count > 0)
+            {
+                var names = string.Join(", ", appServices.Select(t => t.DisplayName).OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
+                warning += $"{appServices.Count} of these run as Windows services ({names}). They'll be stopped properly so Windows " +
+                           $"doesn't restart them. Use Restore Services to bring them back.{Environment.NewLine}{Environment.NewLine}";
+            }
+
+            warning += "Save your work first. Heavy boost may stop background sync, helpers, web views, editors or work apps. " +
+                       "Restart Windows after gaming if you want the normal background-app state back.";
+
+            var accepted = await ShowTimedWarningAsync("Boost Now Warning", warning, 5);
+            if (!accepted)
+            {
+                StatusTextBlock.Text = "Boost cancelled.";
+                return;
+            }
+
+            _boostWarningAcknowledged = true;
+            foreach (var target in appServices)
+            {
+                _acknowledgedAppServices.Add(target.ServiceName);
+            }
         }
 
         _busyOperation = true;
@@ -887,8 +1012,26 @@ public sealed partial class MainWindow : Window
         try
         {
             ShowProgress("Preparing boost...", 10);
-            var before = _loggerService.WriteProcessSnapshot("before-boost", _allProcessGroups, _selectedProcessNames);
-            _loggerService.Write($"WinUI before-boost snapshot: {before}");
+
+            // Freeze the selection: the background work must never enumerate the live
+            // HashSet while the UI thread could still change it.
+            var targets = _selectedProcessNames.ToArray();
+            var groupsBefore = _allProcessGroups.ToArray();
+
+            // The before-boost CSV is diagnostics only — write it alongside the boost
+            // instead of making the user wait for disk I/O before anything closes.
+            var beforeSnapshotTask = Task.Run(() =>
+            {
+                try
+                {
+                    var before = _loggerService.WriteProcessSnapshot("before-boost", groupsBefore, targets);
+                    _loggerService.Write($"WinUI before-boost snapshot: {before}");
+                }
+                catch (Exception ex)
+                {
+                    _loggerService.Write($"WinUI before-boost snapshot failed: {ex.Message}");
+                }
+            });
 
             var fastBoost = FastBoostCheckBox.IsChecked == true;
             var smartClose = SmartCloseCheckBox.IsChecked == true && !fastBoost;
@@ -896,21 +1039,57 @@ public sealed partial class MainWindow : Window
                 ? new TerminationOptions(false, 0, 900)
                 : new TerminationOptions(smartClose, 750, 1200);
 
+            var serviceTrace = new LogBuffer();
+            ServiceStopResult? serviceResult = null;
+            var serviceClosedExes = new List<string>();
+            if (appServices.Count > 0)
+            {
+                ShowProgress($"Stopping {appServices.Count} app service(s)...", 30);
+                serviceResult = await Task.Run(() => _serviceControlService.StopAppServices(appServices, line => serviceTrace.Add(line)));
+                var stoppedNames = new HashSet<string>(serviceResult.StoppedServiceNames, StringComparer.OrdinalIgnoreCase);
+                serviceClosedExes.AddRange(appServices.Where(t => stoppedNames.Contains(t.ServiceName)).Select(t => t.ExeName));
+                RestoreServicesButton.IsEnabled = _serviceControlService.HasStoppedServices();
+            }
+
             ShowProgress("Closing selected app process trees...", 45);
 
+            // Buffer trace lines in memory and flush once, rather than one locked file
+            // append per process while the parallel close is running.
+            var traceLines = new LogBuffer();
             var result = await Task.Run(() => _processService.KillProcessTreesByExecutableNames(
-                _selectedProcessNames,
+                targets,
                 options,
-                line => _loggerService.WritePerformance($"WinUI boost: {line}")));
+                line => traceLines.Add($"WinUI boost: {line}")));
 
-            _loggerService.WriteBoost(string.Join(", ", _selectedProcessNames.OrderBy(n => n)), result);
+            var selectedLabel = string.Join(", ", targets.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
+            var serviceResultForLog = serviceResult;
+            _ = Task.Run(async () =>
+            {
+                await beforeSnapshotTask;
+                _loggerService.WritePerformanceBatch(traceLines);
+                _loggerService.WriteBoost(selectedLabel, result);
+                if (serviceResultForLog is not null)
+                {
+                    _loggerService.WriteServicesBatch(serviceTrace);
+                    _loggerService.WriteServicesBatch(serviceResultForLog.Messages
+                        .Select(m => "  " + m)
+                        .Prepend("Boost app services: " + serviceResultForLog.Summary));
+                }
+            });
 
             ShowProgress("Refreshing memory and running app list...", 80);
             await RefreshProcessesAfterBoostAsync();
 
             ShowProgress("Boost complete.", 100);
-            StatusTextBlock.Text = $"Boost complete: {result.Summary}. Restart Windows to return to normal background-app state.";
+            var serviceNote = serviceResult is { Stopped: > 0 }
+                ? $" Stopped {serviceResult.Stopped} app service(s); use Restore Services to bring them back."
+                : string.Empty;
+            StatusTextBlock.Text = $"Boost complete: {result.Summary}.{serviceNote} Re-checking in a few seconds...";
             ElapsedTextBlock.Text = $"{_operationWatch.Elapsed.TotalSeconds:0.0}s";
+
+            // Re-scan shortly after so apps Windows restarts show up, and tag them.
+            var closedThisBoost = result.ClosedExeNames.Concat(serviceClosedExes).ToArray();
+            _ = CheckForRespawnsAsync(closedThisBoost, ++_boostVersion);
         }
         catch (Exception ex)
         {
@@ -921,37 +1100,98 @@ public sealed partial class MainWindow : Window
         finally
         {
             _operationWatch.Stop();
-            await Task.Delay(350);
+            await Task.Delay(150);
             HideProgress();
             _busyOperation = false;
+        }
+    }
+
+    private async Task CheckForRespawnsAsync(IReadOnlyCollection<string> closedExeNames, int version)
+    {
+        if (closedExeNames.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            // Long enough for Windows service recovery and shell restarts to kick in.
+            await Task.Delay(4000);
+
+            // Wait briefly if the user started something else; give up rather than interfere.
+            for (var attempt = 0; attempt < 3 && _busyOperation; attempt++)
+            {
+                await Task.Delay(1500);
+            }
+
+            if (_isClosing || _busyOperation || version != _boostVersion)
+            {
+                return;
+            }
+
+            _busyOperation = true;
+            try
+            {
+                RefreshMemory();
+                await ReloadProcessGroupsAsync();
+
+                var runningNow = new HashSet<string>(_allProcessGroups.Select(g => g.ExeName), StringComparer.OrdinalIgnoreCase);
+                var cameBack = closedExeNames.Where(runningNow.Contains).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                var newlyTagged = _respawnTracker.Update(closedExeNames, runningNow);
+
+                foreach (var group in _allProcessGroups)
+                {
+                    if (_respawnTracker.IsRespawner(group.ExeName))
+                    {
+                        group.ApplyRespawnTag(true);
+                    }
+                }
+
+                UpdateSelectionCounts();
+
+                if (cameBack.Count == 0)
+                {
+                    StatusTextBlock.Text = "Re-check: everything the boost closed has stayed closed.";
+                }
+                else
+                {
+                    var list = string.Join(", ", cameBack.Take(6)) + (cameBack.Count > 6 ? $" +{cameBack.Count - 6} more" : string.Empty);
+                    StatusTextBlock.Text = $"Re-check: {cameBack.Count} app(s) came straight back ({list}). Marked as Respawns.";
+                }
+
+                var newlyText = newlyTagged.Count > 0 ? string.Join(", ", newlyTagged) : "none";
+                _ = Task.Run(() => _loggerService.Write(
+                    $"Respawn check: closed={closedExeNames.Count}; cameBack={cameBack.Count} [{string.Join(", ", cameBack)}]; newlyTagged={newlyText}"));
+            }
+            finally
+            {
+                _busyOperation = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _loggerService.Write($"Respawn check failed: {ex.Message}");
         }
     }
 
     private async Task RefreshProcessesAfterBoostAsync()
     {
         RefreshMemory();
+        await ReloadProcessGroupsAsync();
 
-        var snapshots = await Task.Run(() => _processService.GetProcessGroups());
-        var incoming = snapshots.Select(s => s.ExeName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var oldGroup in _allProcessGroups)
+        var groupsAfter = _allProcessGroups.ToArray();
+        var selectedAfter = _selectedProcessNames.ToArray();
+        _ = Task.Run(() =>
         {
-            oldGroup.PropertyChanged -= ProcessGroup_PropertyChanged;
-        }
-
-        _allProcessGroups.Clear();
-
-        foreach (var snapshot in snapshots.OrderByDescending(s => s.WorkingSetBytes))
-        {
-            var group = new ProcessGroup(snapshot.ExeName);
-            group.UpdateFrom(snapshot, _selectedProcessNames.Contains(snapshot.ExeName));
-            group.PropertyChanged += ProcessGroup_PropertyChanged;
-            _allProcessGroups.Add(group);
-        }
-
-        ApplyFilter();
-        UpdateSelectionSummary();
-        _loggerService.WriteProcessSnapshot("after-boost", _allProcessGroups, _selectedProcessNames);
+            try
+            {
+                _loggerService.WriteProcessSnapshot("after-boost", groupsAfter, selectedAfter);
+            }
+            catch (Exception ex)
+            {
+                _loggerService.Write($"WinUI after-boost snapshot failed: {ex.Message}");
+            }
+        });
     }
 
     private void SaveLocalButton_Click(object sender, RoutedEventArgs e)
@@ -1270,6 +1510,228 @@ public sealed partial class MainWindow : Window
         _profileService.SaveThemePreference(theme);
         ApplyTheme(theme, animate: true);
         StatusTextBlock.Text = $"{theme} theme enabled.";
+    }
+
+    // ═══════════════════════════════════════════
+    // SERVICES
+    // ═══════════════════════════════════════════
+
+    private async void StopServicesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busyOperation)
+        {
+            return;
+        }
+
+        if (!await EnsureElevatedAsync("Stop Services", "Stopping Windows services requires administrator rights."))
+        {
+            return;
+        }
+
+        var serviceTrace = new LogBuffer();
+        var running = await Task.Run(() => _serviceControlService.GetStoppableRunningServices(line => serviceTrace.Add(line)));
+        if (running.Count == 0)
+        {
+            _ = Task.Run(() => _loggerService.WriteServicesBatch(serviceTrace));
+            await ShowMessageAsync("Nothing to stop", "None of the services Mem-Booster can safely stop are running right now.");
+            return;
+        }
+
+        var chosen = await ShowServicesDialogAsync(running);
+        if (chosen is null || chosen.Count == 0)
+        {
+            StatusTextBlock.Text = "Stop Services cancelled.";
+            return;
+        }
+
+        _busyOperation = true;
+        try
+        {
+            ShowProgress($"Stopping {chosen.Count} service(s)...", 30);
+            var result = await Task.Run(() => _serviceControlService.StopServices(chosen, line => serviceTrace.Add(line)));
+
+            RestoreServicesButton.IsEnabled = _serviceControlService.HasStoppedServices();
+            StatusTextBlock.Text = $"{result.Summary}. Use Restore Services to bring them back, or restart Windows.";
+            _ = Task.Run(() =>
+            {
+                _loggerService.WriteServicesBatch(serviceTrace);
+                _loggerService.WriteServicesBatch(result.Messages.Select(m => "  " + m).Prepend(result.Summary));
+            });
+
+            ShowProgress("Services stopped.", 100);
+            RefreshMemory();
+
+            if (result.Messages.Count > 0)
+            {
+                await ShowMessageAsync("Stop Services", $"{result.Summary}\n\n{string.Join("\n", result.Messages.Take(12))}");
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"Stop Services failed: {ex.Message}";
+            _loggerService.WriteServices("Stop failed: " + ex);
+            await ShowMessageAsync("Stop Services failed", ex.Message);
+        }
+        finally
+        {
+            await Task.Delay(150);
+            HideProgress();
+            _busyOperation = false;
+        }
+    }
+
+    private async void RestoreServicesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busyOperation)
+        {
+            return;
+        }
+
+        if (!_serviceControlService.HasStoppedServices())
+        {
+            RestoreServicesButton.IsEnabled = false;
+            await ShowMessageAsync("Nothing to restore", "Mem-Booster has no stopped services on record.");
+            return;
+        }
+
+        if (!await EnsureElevatedAsync("Restore Services", "Starting Windows services requires administrator rights."))
+        {
+            return;
+        }
+
+        _busyOperation = true;
+        try
+        {
+            ShowProgress("Restoring services...", 30);
+            var serviceTrace = new LogBuffer();
+            var result = await Task.Run(() => _serviceControlService.RestoreServices(line => serviceTrace.Add(line)));
+
+            RestoreServicesButton.IsEnabled = _serviceControlService.HasStoppedServices();
+            StatusTextBlock.Text = result.Summary + ".";
+            _ = Task.Run(() =>
+            {
+                _loggerService.WriteServicesBatch(serviceTrace);
+                _loggerService.WriteServicesBatch(result.Messages.Select(m => "  " + m).Prepend(result.Summary));
+            });
+
+            ShowProgress("Services restored.", 100);
+
+            if (result.Failed > 0 || result.Messages.Count > 0)
+            {
+                await ShowMessageAsync("Restore Services", $"{result.Summary}\n\n{string.Join("\n", result.Messages.Take(12))}");
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"Restore Services failed: {ex.Message}";
+            _loggerService.WriteServices("Restore failed: " + ex);
+            await ShowMessageAsync("Restore Services failed", ex.Message);
+        }
+        finally
+        {
+            await Task.Delay(150);
+            HideProgress();
+            _busyOperation = false;
+        }
+    }
+
+    private async Task<bool> EnsureElevatedAsync(string feature, string reason)
+    {
+        if (AdminService.IsCurrentProcessElevated())
+        {
+            return true;
+        }
+
+        var relaunch = await ShowConfirmAsync(
+            "Administrator mode required",
+            $"{reason} Relaunch Mem-Booster as administrator to use {feature}?",
+            "Relaunch",
+            "Cancel");
+
+        if (relaunch)
+        {
+            try
+            {
+                if (AdminService.RelaunchAsAdministrator())
+                {
+                    Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                await ShowMessageAsync("Admin relaunch failed", ex.Message);
+            }
+        }
+
+        return false;
+    }
+
+    private async Task<List<string>?> ShowServicesDialogAsync(IReadOnlyList<RunningServiceInfo> services)
+    {
+        var checks = new List<CheckBox>();
+        var panel = new StackPanel { Spacing = 10 };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Only services on Mem-Booster's safe list are shown. Startup settings are never changed — " +
+                   "everything returns to normal with Restore Services or a restart.",
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+            Opacity = 0.8
+        });
+
+        ServiceTier? currentTier = null;
+        foreach (var service in services)
+        {
+            if (currentTier != service.Candidate.Tier)
+            {
+                currentTier = service.Candidate.Tier;
+                panel.Children.Add(new TextBlock
+                {
+                    Text = currentTier == ServiceTier.Recommended ? "Recommended" : "Optional — review before stopping",
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Margin = new Thickness(0, 8, 0, 0)
+                });
+            }
+
+            var check = new CheckBox
+            {
+                Content = service.DisplayName,
+                IsChecked = service.Candidate.DefaultSelected,
+                Tag = service.Candidate.ServiceName
+            };
+
+            checks.Add(check);
+            panel.Children.Add(check);
+            panel.Children.Add(new TextBlock
+            {
+                Text = $"{service.Candidate.ServiceName} • {service.Candidate.Description}",
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 12,
+                Margin = new Thickness(28, -8, 0, 2)
+            });
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = $"Stop Services ({services.Count} running)",
+            Content = new ScrollViewer { Content = panel, MaxHeight = 560 },
+            PrimaryButtonText = "Stop selected",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = RootGrid.XamlRoot
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return null;
+        }
+
+        return checks
+            .Where(c => c.IsChecked == true && c.Tag is string)
+            .Select(c => (string)c.Tag)
+            .ToList();
     }
 
     private async Task<List<string>?> ShowDeviceOptionsDialogAsync(IReadOnlyList<DeviceOptimizationOption> options)

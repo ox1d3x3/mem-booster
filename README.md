@@ -8,7 +8,7 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2011-0078D4?logo=windows11&logoColor=white)](https://www.microsoft.com/windows)
 [![Framework](https://img.shields.io/badge/.NET%208-WinUI%203-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Version](https://img.shields.io/badge/version-0.6.16-22C55E)](https://github.com/ox1d3x3/mem-booster/releases)
+[![Version](https://img.shields.io/badge/version-0.6.19-22C55E)](https://github.com/ox1d3x3/mem-booster/releases)
 [![Build](https://img.shields.io/badge/build-self--contained%20x64-0F6B3E)](#build-from-source)
 
 *Created by **Ox1d3x3***
@@ -52,6 +52,9 @@ Profiles are portable XML files. Load a shared profile, or one of the bundled ex
 - **Safety-aware** — protected system, driver, security, launcher, overlay, VPN, and anti-cheat processes are never auto-selected.
 - **Local and shareable profiles** — save your selection locally or export/import portable XML profiles.
 - **Reversible Device Optimise** — opt-in Windows 11 gaming-session settings that can be rolled back.
+- **Stop Services** — pause non-essential Windows services (telemetry, updaters, error reporting) from a curated safe list, and bring them all back with one click.
+- **Publisher column** — see who makes each app, and search by publisher.
+- **Reclaimable-memory estimate** — see roughly how much RAM your selection will free before you boost.
 - **Optional Fast Boost** and **Smart close first** modes.
 - **Dark and light themes** with smooth animated transitions.
 - **Detailed logging and one-click diagnostics** for troubleshooting.
@@ -80,9 +83,10 @@ Download it here: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk
 3. Select apps manually, or use **Safe Select**, **Extreme Select**, or **Aggressive Select**.
 4. Review the **Selected apps** panel on the right.
 5. *(Optional)* Click **Device Optimise** and choose the Windows 11 settings you want to apply.
-6. Click **BOOST NOW**.
-7. After gaming, use **Revert Device Optimise** if you applied it.
-8. Restart Windows when you want all closed background apps and services to return to normal.
+6. *(Optional)* Click **Stop Services** and choose which background services to pause.
+7. Click **BOOST NOW**.
+8. After gaming, use **Revert Device Optimise** and **Restore Services** if you used them.
+9. Restart Windows when you want all closed background apps and services to return to normal.
 
 > **Tip:** Apps are scanned once on launch. Use **Refresh Running Apps** to re-scan at any time.
 
@@ -120,6 +124,12 @@ Mem-Booster scans running user-level apps and groups them by executable name. Yo
 
 When you press **BOOST NOW**, Mem-Booster closes the selected apps and their related process trees. It skips missing apps automatically and avoids protected Windows, driver, security, gaming, overlay, VPN, firewall, and anti-cheat processes.
 
+Selected apps that run as **Windows services** (for example a VPN or updater service) are stopped through Windows' Service Control Manager instead of being killed. A killed service is restarted by Windows within seconds; a stopped one stays stopped until you click **Restore Services** or restart. This needs administrator mode, and the boost warning names every service it will stop.
+
+A few seconds after each boost, Mem-Booster re-scans. Apps that came straight back (Windows shell hosts, apps with watchdogs) are marked **Respawns** in the Status column and left out of the reclaimable-memory estimate. The tag clears itself if a later boost closes the app and it stays closed.
+
+The full boost warning appears on the first boost of a session; repeat boosts run immediately, unless a new service would be stopped.
+
 Mem-Booster does **not** attempt to restore closed apps automatically. After a heavy boost, restart Windows to return to a normal background-app state.
 
 ---
@@ -142,6 +152,26 @@ Mem-Booster intentionally does **not** disable or modify antivirus, Defender, Me
 
 ---
 
+## Stop Services
+
+**Stop Services** (requires administrator mode) lists the services from Mem-Booster's safe list that are running right now, and lets you choose which to pause for your session.
+
+| Group | Examples | Default |
+| --- | --- | --- |
+| **Recommended** | Telemetry (DiagTrack), Windows Error Reporting, Program Compatibility Assistant, Downloaded Maps, Fax, Geolocation, and browser/Adobe background updaters | Ticked |
+| **Optional** | SysMain, Print Spooler, BITS, Windows Update, Delivery Optimization | Unticked |
+
+How it stays safe:
+
+- **Allowlist only.** Mem-Booster can only ever stop services on its built-in list — nothing else, whatever is requested.
+- **Stop, never reconfigure.** Startup types are never changed, so a restart always returns every service to normal.
+- **No cascades.** A service with any running dependent is skipped rather than taking other services down with it.
+- **Remembered.** Every service Mem-Booster stops is recorded, so **Restore Services** works even after you close and reopen the app.
+
+Some services (Windows Update, BITS, Delivery Optimization) can be restarted by Windows on demand — that's expected and harmless.
+
+---
+
 ## Logs and diagnostics
 
 Logs are stored at:
@@ -156,6 +186,7 @@ Logs are stored at:
 | `performance.log` | Operation timings |
 | `boost.log` | Boost results |
 | `device-optimise.log` | Device Optimise and revert details |
+| `services.log` | Stop Services, Restore Services and boost app-service details |
 | `startup.log` | Startup crash log |
 | `snapshots\*.csv` | Before / after process snapshots |
 
@@ -213,6 +244,8 @@ mem-booster/
 │     ├─ ProfileService           Local + XML profile save/load
 │     ├─ SafetyRules              Protected-process and risk classification
 │     ├─ DeviceOptimizationService Reversible Windows 11 tweaks
+│     ├─ ServiceControlService    Allowlisted + app service stop / restore
+│     ├─ RespawnTracker           Remembers apps that come back after a boost
 │     ├─ LoggerService            Activity, performance, and boost logs
 │     ├─ DiagnosticsService       Support-bundle collection
 │     ├─ UpdateService            Update checks

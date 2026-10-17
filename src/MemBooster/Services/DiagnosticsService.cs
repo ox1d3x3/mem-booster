@@ -33,6 +33,8 @@ public sealed class DiagnosticsService
             CopyIfExists(Path.Combine(appDataDirectory, "local-profile.xml"), Path.Combine(tempRoot, "local-profile.xml"));
             CopyIfExists(Path.Combine(appDataDirectory, "settings.xml"), Path.Combine(tempRoot, "settings.xml"));
             CopyIfExists(Path.Combine(appDataDirectory, "device-optimise-state.xml"), Path.Combine(tempRoot, "device-optimise-state.xml"));
+            CopyIfExists(Path.Combine(appDataDirectory, "stopped-services.json"), Path.Combine(tempRoot, "stopped-services.json"));
+            CopyIfExists(Path.Combine(appDataDirectory, "respawners.json"), Path.Combine(tempRoot, "respawners.json"));
             CopyDirectoryIfExists(Path.Combine(appDataDirectory, "logs"), Path.Combine(tempRoot, "logs"));
 
             if (File.Exists(zipPath))

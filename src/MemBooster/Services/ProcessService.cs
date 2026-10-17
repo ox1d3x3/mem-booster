@@ -279,7 +279,7 @@ public sealed class ProcessService
                     return;
                 }
 
-                CachePublisherIfNeeded(exeName, process);
+                QueuePublisherLookup(exeName, process.Id);
 
                 partials.Add((exeName, SafeWorkingSet(process)));
             }
@@ -562,8 +562,10 @@ public sealed class ProcessService
         var closedGracefully = 0;
         var skipped = 0;
         var failed = 0;
-        var messages = new List<string>();
+        var messages = new ConcurrentQueue<string>();
 
+        // Resolve and safety-check every target once, up front.
+        var work = new List<(int Pid, string ExeName)>(orderedPids.Count);
         foreach (var pid in orderedPids)
         {
             if (!byPid.TryGetValue(pid, out var entry))
@@ -576,67 +578,142 @@ public sealed class ProcessService
             if (SafetyRules.IsBlocked(exeName))
             {
                 skipped++;
-                messages.Add($"Skipped protected process: {exeName} ({pid})");
+                messages.Enqueue($"Skipped protected process: {exeName} ({pid})");
                 trace?.Invoke($"Boost skip protected: {exeName} pid={pid}");
                 continue;
             }
 
+            work.Add((pid, exeName));
+        }
+
+        // Closing is almost entirely waiting (window close, process teardown), so the
+        // old one-by-one loop paid the sum of every wait. Running side by side pays
+        // roughly the longest single wait instead. Bounded so we never flood the system.
+        var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount * 2, 4, 32) };
+        var handled = new ConcurrentDictionary<int, byte>();
+        var closedNames = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+
+        // Phase 1 — graceful: ask windowed processes to close so apps can save state.
+        if (options.TryGracefulCloseFirst && options.GracefulCloseTimeoutMs > 0)
+        {
+            Parallel.ForEach(work, parallel, item =>
+            {
+                try
+                {
+                    using var process = Process.GetProcessById(item.Pid);
+                    if (!IsSameProcess(process, item.ExeName))
+                    {
+                        // Exited, or the PID was reused by an unrelated process: never touch it.
+                        handled.TryAdd(item.Pid, 0);
+                        Interlocked.Increment(ref skipped);
+                        return;
+                    }
+
+                    if (process.MainWindowHandle != IntPtr.Zero
+                        && process.CloseMainWindow()
+                        && process.WaitForExit(options.GracefulCloseTimeoutMs))
+                    {
+                        handled.TryAdd(item.Pid, 0);
+                        closedNames.TryAdd(item.ExeName, 0);
+                        Interlocked.Increment(ref closedGracefully);
+                        trace?.Invoke($"Boost closed gracefully: {item.ExeName} pid={item.Pid}");
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    handled.TryAdd(item.Pid, 0);
+                    Interlocked.Increment(ref skipped); // Already gone.
+                }
+                catch
+                {
+                    // Fall through to force-kill in phase 2.
+                }
+            });
+        }
+
+        // Phase 2 — force: everything still alive.
+        Parallel.ForEach(work, parallel, item =>
+        {
+            if (handled.ContainsKey(item.Pid))
+            {
+                return;
+            }
+
             try
             {
-                using var process = Process.GetProcessById(pid);
-
-                if (process.HasExited)
+                using var process = Process.GetProcessById(item.Pid);
+                if (!IsSameProcess(process, item.ExeName))
                 {
-                    skipped++;
-                    continue;
-                }
-
-                if (options.TryGracefulCloseFirst && process.MainWindowHandle != IntPtr.Zero)
-                {
-                    try
-                    {
-                        if (process.CloseMainWindow() && process.WaitForExit(options.GracefulCloseTimeoutMs))
-                        {
-                            closedGracefully++;
-                            trace?.Invoke($"Boost closed gracefully: {exeName} pid={pid}");
-                            continue;
-                        }
-                    }
-                    catch
-                    {
-                        // Fall back to force-kill below.
-                    }
+                    Interlocked.Increment(ref skipped);
+                    return;
                 }
 
                 process.Kill(entireProcessTree: false);
                 if (process.WaitForExit(options.ForceKillTimeoutMs))
                 {
-                    killed++;
-                    trace?.Invoke($"Boost force killed: {exeName} pid={pid}");
+                    Interlocked.Increment(ref killed);
+                    closedNames.TryAdd(item.ExeName, 0);
+                    trace?.Invoke($"Boost force killed: {item.ExeName} pid={item.Pid}");
                 }
                 else
                 {
-                    failed++;
-                    messages.Add($"Timed out closing: {exeName} ({pid})");
-                    trace?.Invoke($"Boost timeout: {exeName} pid={pid}");
+                    Interlocked.Increment(ref failed);
+                    messages.Enqueue($"Timed out closing: {item.ExeName} ({item.Pid})");
+                    trace?.Invoke($"Boost timeout: {item.ExeName} pid={item.Pid}");
                 }
             }
             catch (ArgumentException)
             {
-                skipped++;
+                Interlocked.Increment(ref skipped); // Exited on its own (e.g. parent took it down).
+            }
+            catch (InvalidOperationException)
+            {
+                Interlocked.Increment(ref skipped); // Exited between lookup and kill.
             }
             catch (Exception ex)
             {
-                failed++;
-                messages.Add($"Failed {exeName} ({pid}): {ex.Message}");
-                trace?.Invoke($"Boost failed: {exeName} pid={pid}; {ex.Message}");
+                Interlocked.Increment(ref failed);
+                messages.Enqueue($"Failed {item.ExeName} ({item.Pid}): {ex.Message}");
+                trace?.Invoke($"Boost failed: {item.ExeName} pid={item.Pid}; {ex.Message}");
             }
-        }
+        });
 
         var missing = targets.Count(name => !runningTargetNames.Contains(name));
         stopwatch.Stop();
         trace?.Invoke($"Boost kill complete killed={killed}; graceful={closedGracefully}; skipped={skipped}; failed={failed}; missing={missing}; elapsedMs={stopwatch.ElapsedMilliseconds}");
-        return new BoostResult(killed, closedGracefully, skipped, failed, missing, messages);
+        return new BoostResult(killed, closedGracefully, skipped, failed, missing, messages.ToList())
+        {
+            ClosedExeNames = closedNames.Keys.ToArray()
+        };
+    }
+
+    // Guards against PID reuse: between the snapshot and the kill, a target may exit and
+    // Windows may hand its PID to an unrelated process. Only act if the name still matches.
+    private static bool IsSameProcess(Process process, string expectedExeName)
+    {
+        try
+        {
+            if (process.HasExited)
+            {
+                return false;
+            }
+        }
+        catch
+        {
+            // HasExited can be access-denied for some processes; fall through to the name check.
+        }
+
+        try
+        {
+            return string.Equals(
+                SafetyRules.NormaliseProcessName(process.ProcessName),
+                expectedExeName,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false; // Exited (ProcessName throws once a process is gone).
+        }
     }
 
     private static void AddTree(int pid, Dictionary<int, List<NativeProcessEntry>> byParent, HashSet<int> results)
@@ -684,49 +761,117 @@ public sealed class ProcessService
         }
     }
 
-    // exeName -> publisher (CompanyName). Session-lifetime cache: one version-info
-    // read per unique exe. Empty string means "tried, unknown"; a later instance
-    // that we CAN read (e.g. non-elevated) may overwrite an empty result.
+    // exeName -> publisher (CompanyName). Session-lifetime cache: each unique exe is
+    // looked up once. Failures are cached as "Unknown publisher" so they are not retried
+    // on every refresh.
+    private const string UnknownPublisher = "Unknown publisher";
     private static readonly ConcurrentDictionary<string, string> PublisherCache = new(StringComparer.OrdinalIgnoreCase);
 
-    private static void CachePublisherIfNeeded(string exeName, Process process)
+    // exeName -> one PID to read it from. Filled during the scan, drained by
+    // ResolvePendingPublishers. Keeps the scan itself free of file/disk work so the
+    // list can appear immediately.
+    private static readonly ConcurrentDictionary<string, int> PendingPublisherPids = new(StringComparer.OrdinalIgnoreCase);
+
+    private static void QueuePublisherLookup(string exeName, int pid)
     {
-        if (PublisherCache.TryGetValue(exeName, out var cached) && !string.IsNullOrEmpty(cached))
+        if (!PublisherCache.ContainsKey(exeName))
         {
-            return;
-        }
-
-        try
-        {
-            var path = TryGetMainModulePath(process);
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                PublisherCache.TryAdd(exeName, string.Empty);
-                return;
-            }
-
-            var company = FileVersionInfo.GetVersionInfo(path).CompanyName?.Trim() ?? string.Empty;
-            if (company.Length > 0)
-            {
-                PublisherCache[exeName] = company;
-            }
-            else
-            {
-                PublisherCache.TryAdd(exeName, string.Empty);
-            }
-        }
-        catch
-        {
-            PublisherCache.TryAdd(exeName, string.Empty);
+            PendingPublisherPids.TryAdd(exeName, pid);
         }
     }
 
     private static string PublisherFor(string exeName)
     {
-        return PublisherCache.TryGetValue(exeName, out var value) && value.Length > 0
-            ? value
-            : "Unknown publisher";
+        // Empty = still being looked up; the UI fills it in when resolution finishes.
+        return PublisherCache.TryGetValue(exeName, out var value) ? value : string.Empty;
     }
+
+    public bool HasPendingPublishers => !PendingPublisherPids.IsEmpty;
+
+    /// <summary>
+    /// Resolves publishers queued by the last scan. Runs off the UI thread, after the
+    /// list is already showing. Returns only the entries resolved by this call.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ResolvePendingPublishers()
+    {
+        var work = new List<KeyValuePair<string, int>>();
+        foreach (var pending in PendingPublisherPids)
+        {
+            if (PendingPublisherPids.TryRemove(pending.Key, out var pid))
+            {
+                work.Add(new KeyValuePair<string, int>(pending.Key, pid));
+            }
+        }
+
+        var resolved = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        Parallel.ForEach(work, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 16) }, item =>
+        {
+            var publisher = UnknownPublisher;
+            var path = TryGetImagePath(item.Value);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                // Process exited or denied access. Don't cache: the next scan re-queues it
+                // from a fresh PID, which costs only one OpenProcess call.
+                resolved[item.Key] = publisher;
+                return;
+            }
+
+            try
+            {
+                var company = FileVersionInfo.GetVersionInfo(path).CompanyName?.Trim();
+                if (!string.IsNullOrEmpty(company))
+                {
+                    publisher = company;
+                }
+            }
+            catch
+            {
+                // Missing file or no version resource: stays "Unknown publisher".
+            }
+
+            PublisherCache[item.Key] = publisher;
+            resolved[item.Key] = publisher;
+        });
+
+        return resolved;
+    }
+
+    // QueryFullProcessImageNameW with limited-query rights: one cheap kernel call, and it
+    // works on more processes (including many elevated ones) than Process.MainModule,
+    // which enumerates every module loaded in the target process.
+    private static string? TryGetImagePath(int pid)
+    {
+        const uint ProcessQueryLimitedInformation = 0x1000;
+        var handle = OpenProcess(ProcessQueryLimitedInformation, false, pid);
+        if (handle == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            var buffer = new char[1024];
+            var size = buffer.Length;
+            return QueryFullProcessImageNameW(handle, 0, buffer, ref size) && size > 0
+                ? new string(buffer, 0, size)
+                : null;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint desiredAccess, [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)] bool inheritHandle, int processId);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, [System.Runtime.InteropServices.Out] char[] exeName, ref int size);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr handle);
 
     private static string? TryGetMainModulePath(Process process)
     {
@@ -787,6 +932,9 @@ public sealed record TerminationOptions(bool TryGracefulCloseFirst, int Graceful
 
 public sealed record BoostResult(int Killed, int ClosedGracefully, int Skipped, int Failed, int MissingProfileEntries, IReadOnlyList<string> Messages)
 {
+    /// <summary>Exe names with at least one process closed by this boost.</summary>
+    public IReadOnlyCollection<string> ClosedExeNames { get; init; } = Array.Empty<string>();
+
     public string Summary => $"Force-killed: {Killed}, closed cleanly: {ClosedGracefully}, skipped: {Skipped}, failed: {Failed}, profile entries not running: {MissingProfileEntries}";
 }
 

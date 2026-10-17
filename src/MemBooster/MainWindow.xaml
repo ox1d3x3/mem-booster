@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:converters="using:MemBooster.Converters"
-    Title="Mem-Booster by Ox1d3x3 v0.6.16">
+    Title="Mem-Booster by Ox1d3x3 v0.6.19">
 
     <Border x:Name="RootBorder"
             Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
@@ -109,7 +109,7 @@
                                 Spacing="8">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
                             <TextBlock x:Name="VersionTextBlock"
-                                       Text="v0.6.16"
+                                       Text="v0.6.19"
                                        Foreground="{StaticResource MbAccentBrush}"
                                        FontWeight="SemiBold"
                                        HorizontalAlignment="Right"/>
@@ -335,7 +335,8 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                         <Button Content="Refresh Running Apps"
                                 Style="{StaticResource QuietButtonStyle}"
-                                Click="RefreshButton_Click"/>
+                                Click="RefreshButton_Click"
+                                ToolTipService.ToolTip="Apps are scanned once on launch. Refresh to re-scan."/>
                         <Button Content="Save Current Profile"
                                 Style="{StaticResource QuietButtonStyle}"
                                 Click="SaveLocalButton_Click"
@@ -388,6 +389,17 @@
                                 Content="Revert Device Optimise"
                                 Style="{StaticResource QuietButtonStyle}"
                                 Click="RevertDeviceOptimiseButton_Click"/>
+                        <Button x:Name="StopServicesButton"
+                                Content="Stop Services"
+                                Style="{StaticResource QuietButtonStyle}"
+                                Click="StopServicesButton_Click"
+                                ToolTipService.ToolTip="Stop non-essential background services from a safe list (admin)"/>
+                        <Button x:Name="RestoreServicesButton"
+                                Content="Restore Services"
+                                Style="{StaticResource QuietButtonStyle}"
+                                Click="RestoreServicesButton_Click"
+                                IsEnabled="False"
+                                ToolTipService.ToolTip="Start every service Mem-Booster stopped"/>
                         <Button Content="Preview Boost"
                                 Style="{StaticResource QuietButtonStyle}"
                                 Click="PreviewButton_Click"/>
@@ -401,12 +413,6 @@
                         <CheckBox x:Name="FastBoostCheckBox"
                                   Content="Fast boost"
                                   VerticalAlignment="Center"/>
-                        <TextBlock Text="Tip: apps are scanned once. Use Refresh Running Apps when needed."
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   FontSize="12"
-                                   VerticalAlignment="Center"
-                                   TextWrapping="Wrap"
-                                   MaxWidth="520"/>
                     </StackPanel>
                 </Grid>
             </Border>

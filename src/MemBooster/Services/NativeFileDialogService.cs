@@ -2,233 +2,150 @@ using System.Runtime.InteropServices;
 
 namespace MemBooster.Services;
 
+/// <summary>
+/// Explorer-style Open/Save dialogs for XML profiles.
+///
+/// Uses the Win32 common dialog API (comdlg32 GetOpenFileNameW / GetSaveFileNameW)
+/// through plain P/Invoke. Earlier versions used [ComImport] IFileDialog, which relies
+/// on .NET "built-in COM interop" — a runtime feature that some build toolchains switch
+/// off, making Load/Export XML fail with "Built-in COM has been disabled via a feature
+/// switch". This API involves no .NET COM interop at all, so that switch cannot affect
+/// it. On Windows 10/11 it still shows the modern Explorer dialog, and it works when
+/// Mem-Booster is running as administrator (WinRT pickers do not).
+///
+/// The struct below is blittable (only IntPtr/int/short fields) and every string is
+/// allocated and freed explicitly, so there is no hidden marshalling.
+/// </summary>
 public static class NativeFileDialogService
 {
-    private const int ErrorCancelled = unchecked((int)0x800704C7);
+    private const string Title = "Mem-Booster XML profile";
+    private const string FilterName = "Mem-Booster XML profile (*.xml)";
+    private const string FilterSpec = "*.xml";
+    private const int FileBufferChars = 4096;
+
+    private const int OFN_OVERWRITEPROMPT = 0x00000002;
+    private const int OFN_HIDEREADONLY = 0x00000004;
+    private const int OFN_NOCHANGEDIR = 0x00000008;   // never change the app's working directory
+    private const int OFN_PATHMUSTEXIST = 0x00000800;
+    private const int OFN_FILEMUSTEXIST = 0x00001000;
+    private const int OFN_EXPLORER = 0x00080000;
+    private const int OFN_ENABLESIZING = 0x00800000;
 
     public static string? ShowOpenXmlProfileDialog(IntPtr ownerHandle)
     {
-        IFileDialog dialog = (IFileDialog)(object)new FileOpenDialog();
-        try
-        {
-            dialog.SetTitle("Load Mem-Booster XML profile");
-            dialog.SetFileTypes(1, new[]
-            {
-                new COMDLG_FILTERSPEC("Mem-Booster XML profile (*.xml)", "*.xml")
-            });
-            dialog.SetFileTypeIndex(1);
-            dialog.SetOptions(FOS.FOS_FORCEFILESYSTEM | FOS.FOS_FILEMUSTEXIST | FOS.FOS_PATHMUSTEXIST);
-
-            var result = dialog.Show(ownerHandle);
-            if (result == ErrorCancelled)
-            {
-                return null;
-            }
-
-            Marshal.ThrowExceptionForHR(result);
-            dialog.GetResult(out var item);
-            return GetFileSystemPath(item);
-        }
-        finally
-        {
-            if (dialog is not null)
-            {
-                Marshal.FinalReleaseComObject(dialog);
-            }
-        }
+        return ShowDialog(
+            ownerHandle,
+            "Load " + Title,
+            defaultFileName: null,
+            OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR | OFN_ENABLESIZING,
+            save: false);
     }
 
     public static string? ShowSaveXmlProfileDialog(IntPtr ownerHandle)
     {
-        IFileDialog dialog = (IFileDialog)(object)new FileSaveDialog();
+        return ShowDialog(
+            ownerHandle,
+            "Export " + Title,
+            defaultFileName: "gaming-boost-profile.xml",
+            OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR | OFN_ENABLESIZING,
+            save: true);
+    }
+
+    private static string? ShowDialog(IntPtr ownerHandle, string title, string? defaultFileName, int flags, bool save)
+    {
+        // Filter must be double-null terminated: "name\0spec\0\0".
+        // StringToHGlobalUni appends one terminator; the trailing \0 here supplies the other.
+        var filterPtr = Marshal.StringToHGlobalUni(FilterName + "\0" + FilterSpec + "\0");
+        var titlePtr = Marshal.StringToHGlobalUni(title);
+        var defExtPtr = Marshal.StringToHGlobalUni("xml");
+        var filePtr = Marshal.AllocHGlobal(FileBufferChars * sizeof(char));
+
         try
         {
-            dialog.SetTitle("Export Mem-Booster XML profile");
-            dialog.SetFileName("gaming-boost-profile.xml");
-            dialog.SetDefaultExtension("xml");
-            dialog.SetFileTypes(1, new[]
+            // Zero the whole buffer, then seed the default file name (save dialog only).
+            var initial = new char[FileBufferChars];
+            if (!string.IsNullOrEmpty(defaultFileName))
             {
-                new COMDLG_FILTERSPEC("Mem-Booster XML profile (*.xml)", "*.xml")
-            });
-            dialog.SetFileTypeIndex(1);
-            dialog.SetOptions(FOS.FOS_FORCEFILESYSTEM | FOS.FOS_OVERWRITEPROMPT | FOS.FOS_PATHMUSTEXIST);
-
-            var result = dialog.Show(ownerHandle);
-            if (result == ErrorCancelled)
-            {
-                return null;
+                defaultFileName.CopyTo(0, initial, 0, Math.Min(defaultFileName.Length, FileBufferChars - 1));
             }
 
-            Marshal.ThrowExceptionForHR(result);
-            dialog.GetResult(out var item);
-            return GetFileSystemPath(item);
+            Marshal.Copy(initial, 0, filePtr, FileBufferChars);
+
+            var ofn = new OPENFILENAME
+            {
+                lStructSize = Marshal.SizeOf<OPENFILENAME>(),
+                hwndOwner = ownerHandle,
+                lpstrFilter = filterPtr,
+                nFilterIndex = 1,
+                lpstrFile = filePtr,
+                nMaxFile = FileBufferChars,
+                lpstrTitle = titlePtr,
+                lpstrDefExt = defExtPtr,
+                Flags = flags
+            };
+
+            var accepted = save ? GetSaveFileNameW(ref ofn) : GetOpenFileNameW(ref ofn);
+            if (!accepted)
+            {
+                var error = CommDlgExtendedError();
+                if (error == 0)
+                {
+                    return null; // User cancelled.
+                }
+
+                throw new InvalidOperationException($"Windows file dialog error 0x{error:X4}.");
+            }
+
+            var path = Marshal.PtrToStringUni(filePtr);
+            return string.IsNullOrWhiteSpace(path) ? null : path;
         }
         finally
         {
-            if (dialog is not null)
-            {
-                Marshal.FinalReleaseComObject(dialog);
-            }
+            Marshal.FreeHGlobal(filePtr);
+            Marshal.FreeHGlobal(defExtPtr);
+            Marshal.FreeHGlobal(titlePtr);
+            Marshal.FreeHGlobal(filterPtr);
         }
     }
 
-    private static string GetFileSystemPath(IShellItem item)
+    [DllImport("comdlg32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetOpenFileNameW(ref OPENFILENAME ofn);
+
+    [DllImport("comdlg32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetSaveFileNameW(ref OPENFILENAME ofn);
+
+    [DllImport("comdlg32.dll", ExactSpelling = true)]
+    private static extern uint CommDlgExtendedError();
+
+    // OPENFILENAMEW. Field order and types match the Windows SDK definition
+    // (including the trailing pvReserved/dwReserved/FlagsEx members).
+    [StructLayout(LayoutKind.Sequential)]
+    private struct OPENFILENAME
     {
-        try
-        {
-            item.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out var pathPointer);
-            try
-            {
-                return Marshal.PtrToStringUni(pathPointer) ?? string.Empty;
-            }
-            finally
-            {
-                Marshal.FreeCoTaskMem(pathPointer);
-            }
-        }
-        finally
-        {
-            if (item is not null)
-            {
-                Marshal.FinalReleaseComObject(item);
-            }
-        }
-    }
-
-    [ComImport]
-    [Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
-    private sealed class FileOpenDialog
-    {
-    }
-
-    [ComImport]
-    [Guid("C0B4E2F3-BA21-4773-8DBA-335EC946EB8B")]
-    private sealed class FileSaveDialog
-    {
-    }
-
-    [ComImport]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    [Guid("42f85136-db7e-439c-85f1-e4075d135fc8")]
-    private interface IFileDialog
-    {
-        [PreserveSig]
-        int Show(IntPtr parent);
-
-        void SetFileTypes(uint cFileTypes, [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0)] COMDLG_FILTERSPEC[] rgFilterSpec);
-
-        void SetFileTypeIndex(uint iFileType);
-
-        void GetFileTypeIndex(out uint piFileType);
-
-        void Advise(IntPtr pfde, out uint pdwCookie);
-
-        void Unadvise(uint dwCookie);
-
-        void SetOptions(FOS fos);
-
-        void GetOptions(out FOS pfos);
-
-        void SetDefaultFolder(IShellItem psi);
-
-        void SetFolder(IShellItem psi);
-
-        void GetFolder(out IShellItem ppsi);
-
-        void GetCurrentSelection(out IShellItem ppsi);
-
-        void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
-
-        void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
-
-        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
-
-        void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
-
-        void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
-
-        void GetResult(out IShellItem ppsi);
-
-        void AddPlace(IShellItem psi, FDAP fdap);
-
-        void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
-
-        void Close(int hr);
-
-        void SetClientGuid(ref Guid guid);
-
-        void ClearClientData();
-
-        void SetFilter(IntPtr pFilter);
-    }
-
-    [ComImport]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    [Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe")]
-    private interface IShellItem
-    {
-        void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
-
-        void GetParent(out IShellItem ppsi);
-
-        void GetDisplayName(SIGDN sigdnName, out IntPtr ppszName);
-
-        void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
-
-        void Compare(IShellItem psi, uint hint, out int piOrder);
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct COMDLG_FILTERSPEC
-    {
-        [MarshalAs(UnmanagedType.LPWStr)]
-        public string pszName;
-
-        [MarshalAs(UnmanagedType.LPWStr)]
-        public string pszSpec;
-
-        public COMDLG_FILTERSPEC(string name, string spec)
-        {
-            pszName = name;
-            pszSpec = spec;
-        }
-    }
-
-    [Flags]
-    private enum FOS : uint
-    {
-        FOS_OVERWRITEPROMPT = 0x00000002,
-        FOS_STRICTFILETYPES = 0x00000004,
-        FOS_NOCHANGEDIR = 0x00000008,
-        FOS_PICKFOLDERS = 0x00000020,
-        FOS_FORCEFILESYSTEM = 0x00000040,
-        FOS_ALLNONSTORAGEITEMS = 0x00000080,
-        FOS_NOVALIDATE = 0x00000100,
-        FOS_ALLOWMULTISELECT = 0x00000200,
-        FOS_PATHMUSTEXIST = 0x00000800,
-        FOS_FILEMUSTEXIST = 0x00001000,
-        FOS_CREATEPROMPT = 0x00002000,
-        FOS_SHAREAWARE = 0x00004000,
-        FOS_NOREADONLYRETURN = 0x00008000,
-        FOS_NOTESTFILECREATE = 0x00010000,
-        FOS_HIDEMRUPLACES = 0x00020000,
-        FOS_HIDEPINNEDPLACES = 0x00040000,
-        FOS_NODEREFERENCELINKS = 0x00100000,
-        FOS_OKBUTTONNEEDSINTERACTION = 0x00200000,
-        FOS_DONTADDTORECENT = 0x02000000,
-        FOS_FORCESHOWHIDDEN = 0x10000000,
-        FOS_DEFAULTNOMINIMODE = 0x20000000,
-        FOS_FORCEPREVIEWPANEON = 0x40000000
-    }
-
-    private enum FDAP
-    {
-        FDAP_BOTTOM = 0,
-        FDAP_TOP = 1
-    }
-
-    private enum SIGDN : uint
-    {
-        SIGDN_FILESYSPATH = 0x80058000
+        public int lStructSize;
+        public IntPtr hwndOwner;
+        public IntPtr hInstance;
+        public IntPtr lpstrFilter;
+        public IntPtr lpstrCustomFilter;
+        public int nMaxCustFilter;
+        public int nFilterIndex;
+        public IntPtr lpstrFile;
+        public int nMaxFile;
+        public IntPtr lpstrFileTitle;
+        public int nMaxFileTitle;
+        public IntPtr lpstrInitialDir;
+        public IntPtr lpstrTitle;
+        public int Flags;
+        public short nFileOffset;
+        public short nFileExtension;
+        public IntPtr lpstrDefExt;
+        public IntPtr lCustData;
+        public IntPtr lpfnHook;
+        public IntPtr lpTemplateName;
+        public IntPtr pvReserved;
+        public int dwReserved;
+        public int FlagsEx;
     }
 }
