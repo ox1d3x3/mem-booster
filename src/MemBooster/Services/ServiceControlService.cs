@@ -75,6 +75,56 @@ public sealed class ServiceControlService
     }
 
     /// <summary>
+    /// Drops recorded services that Windows has already brought back (usually after a
+    /// restart), or that no longer exist. Returns how many were dropped. Services still
+    /// stopped are kept, so Restore Services only lights up when it has work to do.
+    /// </summary>
+    public int PruneRestartedServices(Action<string>? trace = null)
+    {
+        lock (_stateSync)
+        {
+            var recorded = LoadState();
+            if (recorded.Count == 0)
+            {
+                return 0;
+            }
+
+            var stillStopped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in recorded)
+            {
+                try
+                {
+                    using var service = new ServiceController(name);
+                    service.Refresh();
+                    if (service.Status is ServiceControllerStatus.Running or ServiceControllerStatus.StartPending)
+                    {
+                        continue; // Back already.
+                    }
+
+                    stillStopped.Add(name);
+                }
+                catch (InvalidOperationException ex) when (IsServiceMissing(ex))
+                {
+                    // Uninstalled: nothing to restore.
+                }
+                catch
+                {
+                    stillStopped.Add(name); // Unsure: keep it so the user can still restore.
+                }
+            }
+
+            var dropped = recorded.Count - stillStopped.Count;
+            if (dropped > 0)
+            {
+                SaveState(stillStopped);
+                trace?.Invoke($"Pruned {dropped} recorded service(s) already running again; {stillStopped.Count} still stopped.");
+            }
+
+            return dropped;
+        }
+    }
+
+    /// <summary>
     /// Allowlisted services that are running right now and can be stopped safely.
     /// One SCM enumeration — fast, no per-service process spawns.
     /// </summary>
@@ -299,7 +349,28 @@ public sealed class ServiceControlService
                     return;
                 }
 
-                service.Stop();
+                // Ask Windows directly. Unlike ServiceController.Stop(), this never stops
+                // dependent services: if one started since the check above, Windows refuses
+                // with ERROR_DEPENDENT_SERVICES_RUNNING and we skip instead of cascading.
+                var stopError = SendStopControl(name);
+                if (stopError == ErrorServiceNotActive)
+                {
+                    Interlocked.Increment(ref alreadyStopped);
+                    return;
+                }
+
+                if (stopError == ErrorDependentServicesRunning)
+                {
+                    Interlocked.Increment(ref skipped);
+                    messages.Enqueue($"Skipped {name}: a dependent service started.");
+                    return;
+                }
+
+                if (stopError != 0)
+                {
+                    throw new System.ComponentModel.Win32Exception(stopError);
+                }
+
                 try
                 {
                     service.WaitForStatus(ServiceControllerStatus.Stopped, StopTimeout);
@@ -429,29 +500,109 @@ public sealed class ServiceControlService
             return true; // Can't prove it's safe, so treat as unsafe.
         }
 
-        var active = false;
+        // The array is cached and owned by `service` — do NOT dispose its entries.
+        // (v0.6.17-0.6.19 disposed them, which broke any later call on `service` that
+        // walks DependentServices, e.g. stopping Windows Search.)
         foreach (var dependent in dependents)
         {
             try
             {
-                if (!active && dependent.Status != ServiceControllerStatus.Stopped)
+                dependent.Refresh();
+                if (dependent.Status != ServiceControllerStatus.Stopped)
                 {
-                    active = true;
                     blocker = dependent.ServiceName;
+                    return true;
                 }
             }
             catch
             {
-                // Ignore unreadable dependents; they cannot be confirmed as running.
-            }
-            finally
-            {
-                dependent.Dispose();
+                blocker = $"{SafeName(dependent)} (unreadable)";
+                return true; // Can't prove it's stopped, so treat as unsafe.
             }
         }
 
-        return active;
+        return false;
     }
+
+    private const int ErrorDependentServicesRunning = 1051;
+    private const int ErrorServiceNotActive = 1062;
+
+    // Returns 0 on success, otherwise the Win32 error code.
+    private static int SendStopControl(string serviceName)
+    {
+        const uint ScManagerConnect = 0x0001;
+        const uint ServiceStop = 0x0020;
+        const uint ServiceQueryStatus = 0x0004;
+        const uint ServiceControlStop = 0x00000001;
+
+        var scm = OpenSCManagerW(null, null, ScManagerConnect);
+        if (scm == IntPtr.Zero)
+        {
+            return System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+        }
+
+        try
+        {
+            var handle = OpenServiceW(scm, serviceName, ServiceStop | ServiceQueryStatus);
+            if (handle == IntPtr.Zero)
+            {
+                return System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            }
+
+            try
+            {
+                return ControlService(handle, ServiceControlStop, out _)
+                    ? 0
+                    : System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            }
+            finally
+            {
+                CloseServiceHandle(handle);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(scm);
+        }
+    }
+
+    private static string SafeName(ServiceController controller)
+    {
+        try
+        {
+            return controller.ServiceName;
+        }
+        catch
+        {
+            return "dependent service";
+        }
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct SERVICE_STATUS
+    {
+        public int dwServiceType;
+        public int dwCurrentState;
+        public int dwControlsAccepted;
+        public int dwWin32ExitCode;
+        public int dwServiceSpecificExitCode;
+        public int dwCheckPoint;
+        public int dwWaitHint;
+    }
+
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern IntPtr OpenSCManagerW(string? machineName, string? databaseName, uint desiredAccess);
+
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern IntPtr OpenServiceW(IntPtr scManager, string serviceName, uint desiredAccess);
+
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool ControlService(IntPtr service, uint control, out SERVICE_STATUS status);
+
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool CloseServiceHandle(IntPtr handle);
 
     private static bool IsOwnProcessService(ServiceController service)
     {

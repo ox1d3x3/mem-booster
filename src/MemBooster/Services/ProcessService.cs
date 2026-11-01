@@ -935,6 +935,26 @@ public sealed record BoostResult(int Killed, int ClosedGracefully, int Skipped, 
     /// <summary>Exe names with at least one process closed by this boost.</summary>
     public IReadOnlyCollection<string> ClosedExeNames { get; init; } = Array.Empty<string>();
 
+    public static BoostResult Empty { get; } = new(0, 0, 0, 0, 0, Array.Empty<string>());
+
+    /// <summary>Adds up two kill passes from the same boost.</summary>
+    public static BoostResult Combine(BoostResult first, BoostResult second)
+    {
+        return new BoostResult(
+            first.Killed + second.Killed,
+            first.ClosedGracefully + second.ClosedGracefully,
+            first.Skipped + second.Skipped,
+            first.Failed + second.Failed,
+            first.MissingProfileEntries + second.MissingProfileEntries,
+            first.Messages.Concat(second.Messages).ToList())
+        {
+            ClosedExeNames = first.ClosedExeNames
+                .Concat(second.ClosedExeNames)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+        };
+    }
+
     public string Summary => $"Force-killed: {Killed}, closed cleanly: {ClosedGracefully}, skipped: {Skipped}, failed: {Failed}, profile entries not running: {MissingProfileEntries}";
 }
 

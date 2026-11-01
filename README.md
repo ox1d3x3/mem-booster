@@ -8,7 +8,7 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2011-0078D4?logo=windows11&logoColor=white)](https://www.microsoft.com/windows)
 [![Framework](https://img.shields.io/badge/.NET%208-WinUI%203-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Version](https://img.shields.io/badge/version-0.6.19-22C55E)](https://github.com/ox1d3x3/mem-booster/releases)
+[![Version](https://img.shields.io/badge/version-0.6.20-22C55E)](https://github.com/ox1d3x3/mem-booster/releases)
 [![Build](https://img.shields.io/badge/build-self--contained%20x64-0F6B3E)](#build-from-source)
 
 *Created by **Ox1d3x3***
@@ -126,9 +126,13 @@ When you press **BOOST NOW**, Mem-Booster closes the selected apps and their rel
 
 Selected apps that run as **Windows services** (for example a VPN or updater service) are stopped through Windows' Service Control Manager instead of being killed. A killed service is restarted by Windows within seconds; a stopped one stays stopped until you click **Restore Services** or restart. This needs administrator mode, and the boost warning names every service it will stop.
 
-A few seconds after each boost, Mem-Booster re-scans. Apps that came straight back (Windows shell hosts, apps with watchdogs) are marked **Respawns** in the Status column and left out of the reclaimable-memory estimate. The tag clears itself if a later boost closes the app and it stays closed.
+Services are stopped at the same time as other apps are closed, so they add little to boost time. Services with running dependents are never stopped; Windows itself enforces this.
 
-The full boost warning appears on the first boost of a session; repeat boosts run immediately, unless a new service would be stopped.
+A few seconds after each boost, Mem-Booster re-scans. Apps that came straight back (Windows shell hosts, apps with watchdogs) are marked **Respawns** in the Status column. Later boosts leave them running instead of closing them for nothing, and they're left out of the reclaimable-memory estimate. A tag expires 7 days after it was last confirmed; the next boost then tries once more and re-tags the app if it comes back.
+
+The full boost warning appears on the first boost of a session; repeat boosts run immediately, unless a new service would be stopped. Extra clicks within 1.5 seconds of a boost finishing are ignored.
+
+On launch, Mem-Booster forgets any stopped service that Windows has already restarted (for example after a reboot), so **Restore Services** is only enabled when something is actually stopped.
 
 Mem-Booster does **not** attempt to restore closed apps automatically. After a heavy boost, restart Windows to return to a normal background-app state.
 

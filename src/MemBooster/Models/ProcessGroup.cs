@@ -116,7 +116,7 @@ public sealed class ProcessGroup : INotifyPropertyChanged
         if (respawns)
         {
             RiskLabel = "Respawns";
-            RiskDescription = "Came straight back after the last boost; closing it doesn't last";
+            RiskDescription = "Comes straight back when closed, so boosts skip it";
         }
     }
 

@@ -8,21 +8,29 @@ namespace MemBooster.Services;
 /// hosts, apps restarted by a watchdog or scheduled task, and so on).
 ///
 /// An app is tagged when it was closed by a boost and is running again at the
-/// post-boost re-scan. The tag is removed the next time a boost closes it and it stays
-/// closed, so the list corrects itself.
+/// post-boost re-scan. Boosts skip tagged apps, so a tag can't be disproved by a later
+/// boost; instead each tag expires <see cref="TagLifetime"/> after it was last
+/// confirmed. The next boost then closes the app once more and re-tags it only if it
+/// comes back again.
 /// </summary>
 public sealed class RespawnTracker
 {
+    public static readonly TimeSpan TagLifetime = TimeSpan.FromDays(7);
+
     private readonly string _path;
-    private readonly HashSet<string> _respawners;
+    private readonly Dictionary<string, DateTime> _confirmedUtc;
 
     public RespawnTracker(string appDataDirectory)
     {
         _path = Path.Combine(appDataDirectory, "respawners.json");
-        _respawners = Load(_path);
+        _confirmedUtc = Load(_path);
     }
 
-    public bool IsRespawner(string exeName) => _respawners.Contains(exeName);
+    public bool IsRespawner(string exeName)
+    {
+        return _confirmedUtc.TryGetValue(exeName, out var confirmed)
+            && DateTime.UtcNow - confirmed < TagLifetime;
+    }
 
     /// <summary>
     /// Updates tags from one boost. Returns the apps newly tagged by this call.
@@ -31,18 +39,21 @@ public sealed class RespawnTracker
     {
         var newlyTagged = new List<string>();
         var changed = false;
+        var now = DateTime.UtcNow;
 
         foreach (var name in closedByBoost.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (runningNow.Contains(name))
             {
-                if (_respawners.Add(name))
+                if (!IsRespawner(name))
                 {
                     newlyTagged.Add(name);
-                    changed = true;
                 }
+
+                _confirmedUtc[name] = now; // (Re)confirm: restarts the expiry clock.
+                changed = true;
             }
-            else if (_respawners.Remove(name))
+            else if (_confirmedUtc.Remove(name))
             {
                 changed = true; // It stayed closed this time.
             }
@@ -56,16 +67,43 @@ public sealed class RespawnTracker
         return newlyTagged;
     }
 
-    private static HashSet<string> Load(string path)
+    private static Dictionary<string, DateTime> Load(string path)
     {
+        var result = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            if (File.Exists(path))
+            if (!File.Exists(path))
             {
-                var names = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path));
-                if (names is not null)
+                return result;
+            }
+
+            var json = File.ReadAllText(path);
+            using var document = JsonDocument.Parse(json);
+
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                // Current format: { "exe": "2026-11-01T03:42:00Z", ... }
+                foreach (var property in document.RootElement.EnumerateObject())
                 {
-                    return new HashSet<string>(names.Where(n => !string.IsNullOrWhiteSpace(n)), StringComparer.OrdinalIgnoreCase);
+                    if (!string.IsNullOrWhiteSpace(property.Name)
+                        && property.Value.ValueKind == JsonValueKind.String
+                        && property.Value.TryGetDateTime(out var confirmed))
+                    {
+                        result[property.Name] = confirmed.ToUniversalTime();
+                    }
+                }
+            }
+            else if (document.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                // v0.6.19 format: ["exe", ...] with no dates. Treat as confirmed now so
+                // existing tags carry over and expire on the normal schedule.
+                foreach (var item in document.RootElement.EnumerateArray())
+                {
+                    var name = item.ValueKind == JsonValueKind.String ? item.GetString() : null;
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        result[name] = DateTime.UtcNow;
+                    }
                 }
             }
         }
@@ -74,14 +112,14 @@ public sealed class RespawnTracker
             // Corrupt or unreadable: start fresh.
         }
 
-        return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return result;
     }
 
     private void Save()
     {
         try
         {
-            if (_respawners.Count == 0)
+            if (_confirmedUtc.Count == 0)
             {
                 if (File.Exists(_path))
                 {
@@ -92,7 +130,10 @@ public sealed class RespawnTracker
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            File.WriteAllText(_path, JsonSerializer.Serialize(_respawners.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList()));
+            var ordered = _confirmedUtc
+                .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(pair => pair.Key, pair => pair.Value.ToString("O"));
+            File.WriteAllText(_path, JsonSerializer.Serialize(ordered));
         }
         catch
         {

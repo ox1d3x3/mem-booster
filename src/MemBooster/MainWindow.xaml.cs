@@ -14,7 +14,7 @@ namespace MemBooster;
 
 public sealed partial class MainWindow : Window
 {
-    private const string CurrentVersion = "0.6.19";
+    private const string CurrentVersion = "0.6.20";
     private const string RepositoryUrl = "https://github.com/ox1d3x3/mem-booster";
 
     private readonly MemoryService _memoryService = new();
@@ -33,6 +33,10 @@ public sealed partial class MainWindow : Window
     private bool _continueWithoutAdmin;
     private readonly HashSet<string> _acknowledgedAppServices = new(StringComparer.OrdinalIgnoreCase);
     private int _boostVersion;
+
+    // Clicks this soon after a boost finishes are treated as accidental double-clicks.
+    private static readonly TimeSpan BoostCooldown = TimeSpan.FromSeconds(1.5);
+    private DateTime _lastBoostFinishedUtc = DateTime.MinValue;
 
     private readonly HashSet<string> _selectedProcessNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ProcessGroup> _allProcessGroups = new();
@@ -90,7 +94,20 @@ public sealed partial class MainWindow : Window
         {
             _ = PlayEntranceAnimationAsync();
 
+            // Forget services Windows already restarted (e.g. after a reboot), off the UI thread.
+            var pruneTask = Task.Run(() => _serviceControlService.PruneRestartedServices(line => _loggerService.WriteServices(line)));
+
             await RefreshProcessesAsync("Initial load", true);
+
+            try
+            {
+                await pruneTask;
+                RestoreServicesButton.IsEnabled = _serviceControlService.HasStoppedServices();
+            }
+            catch (Exception ex)
+            {
+                _loggerService.WriteServices($"Startup service prune failed: {ex.Message}");
+            }
             _ = Task.Run(async () =>
             {
                 await Task.Delay(1500);
@@ -914,6 +931,12 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (DateTime.UtcNow - _lastBoostFinishedUtc < BoostCooldown)
+        {
+            StatusTextBlock.Text = "Boost just finished; ignored the extra click.";
+            return;
+        }
+
         _ = AnimateBoostButtonPressAsync();
 
         var runningTargets = _allProcessGroups
@@ -974,12 +997,35 @@ public sealed partial class MainWindow : Window
             }
         }
 
+        // Apps tagged Respawns come straight back when closed, so closing them only causes
+        // churn (e.g. the Start menu flickering). Skip them. A service-backed app is never
+        // skipped: stopping its service is what keeps it closed.
+        var serviceExeSet = new HashSet<string>(appServices.Select(t => t.ExeName), StringComparer.OrdinalIgnoreCase);
+        var respawnSkipSet = new HashSet<string>(
+            runningTargets.Where(p => p.Respawns && !serviceExeSet.Contains(p.ExeName)).Select(p => p.ExeName),
+            StringComparer.OrdinalIgnoreCase);
+        var closableTargets = runningTargets.Where(p => !respawnSkipSet.Contains(p.ExeName)).ToList();
+
+        if (closableTargets.Count == 0)
+        {
+            await ShowMessageAsync(
+                "Nothing to boost",
+                "Every selected app that's running is marked Respawns: Windows restarts them as soon as they close, so boosting them has no lasting effect.");
+            return;
+        }
+
         var unseenServices = appServices.Where(t => !_acknowledgedAppServices.Contains(t.ServiceName)).ToList();
         if (!_boostWarningAcknowledged || unseenServices.Count > 0)
         {
-            var selectedMemory = runningTargets.Sum(p => p.WorkingSetBytes);
-            var warning = $"Mem-Booster will close {runningTargets.Count} selected running app group(s).{Environment.NewLine}{Environment.NewLine}" +
+            var selectedMemory = closableTargets.Sum(p => p.WorkingSetBytes);
+            var warning = $"Mem-Booster will close {closableTargets.Count} selected running app group(s).{Environment.NewLine}{Environment.NewLine}" +
                           $"Estimated selected working set: {FormatBytes(selectedMemory)}{Environment.NewLine}{Environment.NewLine}";
+
+            if (respawnSkipSet.Count > 0)
+            {
+                warning += $"{respawnSkipSet.Count} selected app(s) marked Respawns will be left running, because Windows restarts them " +
+                           $"straight away.{Environment.NewLine}{Environment.NewLine}";
+            }
 
             if (appServices.Count > 0)
             {
@@ -1040,26 +1086,48 @@ public sealed partial class MainWindow : Window
                 : new TerminationOptions(smartClose, 750, 1200);
 
             var serviceTrace = new LogBuffer();
-            ServiceStopResult? serviceResult = null;
+            var traceLines = new LogBuffer();
             var serviceClosedExes = new List<string>();
-            if (appServices.Count > 0)
+
+            // Pass A, in parallel: stop app services while closing every other app.
+            // Service exes are held back from this kill pass so it can't race the stop.
+            var passATargets = targets
+                .Where(n => !serviceExeSet.Contains(n) && !respawnSkipSet.Contains(n))
+                .ToArray();
+
+            ShowProgress(appServices.Count > 0
+                ? $"Stopping {appServices.Count} app service(s) and closing apps..."
+                : "Closing selected app process trees...", 40);
+
+            var serviceTask = appServices.Count > 0
+                ? Task.Run(() => (ServiceStopResult?)_serviceControlService.StopAppServices(appServices, line => serviceTrace.Add(line)))
+                : Task.FromResult<ServiceStopResult?>(null);
+            var killTask = passATargets.Length > 0
+                ? Task.Run(() => _processService.KillProcessTreesByExecutableNames(passATargets, options, line => traceLines.Add($"WinUI boost: {line}")))
+                : Task.FromResult(BoostResult.Empty);
+
+            await Task.WhenAll(serviceTask, killTask);
+            var serviceResult = serviceTask.Result;
+            var result = killTask.Result;
+
+            if (serviceResult is not null)
             {
-                ShowProgress($"Stopping {appServices.Count} app service(s)...", 30);
-                serviceResult = await Task.Run(() => _serviceControlService.StopAppServices(appServices, line => serviceTrace.Add(line)));
                 var stoppedNames = new HashSet<string>(serviceResult.StoppedServiceNames, StringComparer.OrdinalIgnoreCase);
                 serviceClosedExes.AddRange(appServices.Where(t => stoppedNames.Contains(t.ServiceName)).Select(t => t.ExeName));
                 RestoreServicesButton.IsEnabled = _serviceControlService.HasStoppedServices();
             }
 
-            ShowProgress("Closing selected app process trees...", 45);
-
-            // Buffer trace lines in memory and flush once, rather than one locked file
-            // append per process while the parallel close is running.
-            var traceLines = new LogBuffer();
-            var result = await Task.Run(() => _processService.KillProcessTreesByExecutableNames(
-                targets,
-                options,
-                line => traceLines.Add($"WinUI boost: {line}")));
+            // Pass B: now that services are done, close anything still running under a
+            // service exe name — a same-name tray app (e.g. Everything.exe) or a service
+            // that refused to stop. Same outcome as before the passes were split.
+            if (serviceExeSet.Count > 0)
+            {
+                ShowProgress("Closing remaining app processes...", 65);
+                var passBTargets = serviceExeSet.ToArray();
+                var passB = await Task.Run(() => _processService.KillProcessTreesByExecutableNames(
+                    passBTargets, options, line => traceLines.Add($"WinUI boost (pass B): {line}")));
+                result = BoostResult.Combine(result, passB);
+            }
 
             var selectedLabel = string.Join(", ", targets.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
             var serviceResultForLog = serviceResult;
@@ -1084,7 +1152,10 @@ public sealed partial class MainWindow : Window
             var serviceNote = serviceResult is { Stopped: > 0 }
                 ? $" Stopped {serviceResult.Stopped} app service(s); use Restore Services to bring them back."
                 : string.Empty;
-            StatusTextBlock.Text = $"Boost complete: {result.Summary}.{serviceNote} Re-checking in a few seconds...";
+            var respawnNote = respawnSkipSet.Count > 0
+                ? $" Left {respawnSkipSet.Count} respawning app(s) alone."
+                : string.Empty;
+            StatusTextBlock.Text = $"Boost complete: {result.Summary}.{serviceNote}{respawnNote} Re-checking in a few seconds...";
             ElapsedTextBlock.Text = $"{_operationWatch.Elapsed.TotalSeconds:0.0}s";
 
             // Re-scan shortly after so apps Windows restarts show up, and tag them.
@@ -1103,6 +1174,7 @@ public sealed partial class MainWindow : Window
             await Task.Delay(150);
             HideProgress();
             _busyOperation = false;
+            _lastBoostFinishedUtc = DateTime.UtcNow;
         }
     }
 
