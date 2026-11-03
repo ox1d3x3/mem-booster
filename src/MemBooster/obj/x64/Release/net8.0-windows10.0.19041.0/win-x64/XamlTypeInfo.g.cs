@@ -487,7 +487,6 @@ namespace MemBooster.MemBooster_XamlTypeInfo
                 userType.AddMemberName("InstanceCount");
                 userType.AddMemberName("IsSelected");
                 userType.AddMemberName("CanSelect");
-                userType.AddMemberName("IsRecommended");
                 userType.AddMemberName("RiskLabel");
                 userType.AddMemberName("RiskDescription");
                 userType.AddMemberName("MemoryText");
@@ -736,127 +735,117 @@ namespace MemBooster.MemBooster_XamlTypeInfo
             var that = (global::MemBooster.Models.ProcessGroup)instance;
             that.CanSelect = (global::System.Boolean)Value;
         }
-        private object get_13_ProcessGroup_IsRecommended(object instance)
-        {
-            var that = (global::MemBooster.Models.ProcessGroup)instance;
-            return that.IsRecommended;
-        }
-        private void set_13_ProcessGroup_IsRecommended(object instance, object Value)
-        {
-            var that = (global::MemBooster.Models.ProcessGroup)instance;
-            that.IsRecommended = (global::System.Boolean)Value;
-        }
-        private object get_14_ProcessGroup_RiskLabel(object instance)
+        private object get_13_ProcessGroup_RiskLabel(object instance)
         {
             var that = (global::MemBooster.Models.ProcessGroup)instance;
             return that.RiskLabel;
         }
-        private void set_14_ProcessGroup_RiskLabel(object instance, object Value)
+        private void set_13_ProcessGroup_RiskLabel(object instance, object Value)
         {
             var that = (global::MemBooster.Models.ProcessGroup)instance;
             that.RiskLabel = (global::System.String)Value;
         }
-        private object get_15_ProcessGroup_RiskDescription(object instance)
+        private object get_14_ProcessGroup_RiskDescription(object instance)
         {
             var that = (global::MemBooster.Models.ProcessGroup)instance;
             return that.RiskDescription;
         }
-        private void set_15_ProcessGroup_RiskDescription(object instance, object Value)
+        private void set_14_ProcessGroup_RiskDescription(object instance, object Value)
         {
             var that = (global::MemBooster.Models.ProcessGroup)instance;
             that.RiskDescription = (global::System.String)Value;
         }
-        private object get_16_ProcessGroup_MemoryText(object instance)
+        private object get_15_ProcessGroup_MemoryText(object instance)
         {
             var that = (global::MemBooster.Models.ProcessGroup)instance;
             return that.MemoryText;
         }
-        private object get_17_ProcessGroup_Respawns(object instance)
+        private object get_16_ProcessGroup_Respawns(object instance)
         {
             var that = (global::MemBooster.Models.ProcessGroup)instance;
             return that.Respawns;
         }
-        private object get_18_MainWindow_SelectedApps(object instance)
+        private object get_17_MainWindow_SelectedApps(object instance)
         {
             var that = (global::MemBooster.MainWindow)instance;
             return that.SelectedApps;
         }
-        private object get_19_SelectedAppItem_DisplayName(object instance)
+        private object get_18_SelectedAppItem_DisplayName(object instance)
         {
             var that = (global::MemBooster.Models.SelectedAppItem)instance;
             return that.DisplayName;
         }
-        private void set_19_SelectedAppItem_DisplayName(object instance, object Value)
+        private void set_18_SelectedAppItem_DisplayName(object instance, object Value)
         {
             var that = (global::MemBooster.Models.SelectedAppItem)instance;
             that.DisplayName = (global::System.String)Value;
         }
-        private object get_20_SelectedAppItem_ExeName(object instance)
+        private object get_19_SelectedAppItem_ExeName(object instance)
         {
             var that = (global::MemBooster.Models.SelectedAppItem)instance;
             return that.ExeName;
         }
-        private void set_20_SelectedAppItem_ExeName(object instance, object Value)
+        private void set_19_SelectedAppItem_ExeName(object instance, object Value)
         {
             var that = (global::MemBooster.Models.SelectedAppItem)instance;
             that.ExeName = (global::System.String)Value;
         }
-        private object get_21_SelectedAppItem_Subtitle(object instance)
+        private object get_20_SelectedAppItem_Subtitle(object instance)
         {
             var that = (global::MemBooster.Models.SelectedAppItem)instance;
             return that.Subtitle;
         }
-        private void set_21_SelectedAppItem_Subtitle(object instance, object Value)
+        private void set_20_SelectedAppItem_Subtitle(object instance, object Value)
         {
             var that = (global::MemBooster.Models.SelectedAppItem)instance;
             that.Subtitle = (global::System.String)Value;
         }
-        private object get_22_TreeViewNode_Children(object instance)
+        private object get_21_TreeViewNode_Children(object instance)
         {
             var that = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)instance;
             return that.Children;
         }
-        private object get_23_TreeViewNode_Content(object instance)
+        private object get_22_TreeViewNode_Content(object instance)
         {
             var that = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)instance;
             return that.Content;
         }
-        private void set_23_TreeViewNode_Content(object instance, object Value)
+        private void set_22_TreeViewNode_Content(object instance, object Value)
         {
             var that = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)instance;
             that.Content = (global::System.Object)Value;
         }
-        private object get_24_TreeViewNode_Depth(object instance)
+        private object get_23_TreeViewNode_Depth(object instance)
         {
             var that = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)instance;
             return that.Depth;
         }
-        private object get_25_TreeViewNode_HasChildren(object instance)
+        private object get_24_TreeViewNode_HasChildren(object instance)
         {
             var that = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)instance;
             return that.HasChildren;
         }
-        private object get_26_TreeViewNode_HasUnrealizedChildren(object instance)
+        private object get_25_TreeViewNode_HasUnrealizedChildren(object instance)
         {
             var that = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)instance;
             return that.HasUnrealizedChildren;
         }
-        private void set_26_TreeViewNode_HasUnrealizedChildren(object instance, object Value)
+        private void set_25_TreeViewNode_HasUnrealizedChildren(object instance, object Value)
         {
             var that = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)instance;
             that.HasUnrealizedChildren = (global::System.Boolean)Value;
         }
-        private object get_27_TreeViewNode_IsExpanded(object instance)
+        private object get_26_TreeViewNode_IsExpanded(object instance)
         {
             var that = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)instance;
             return that.IsExpanded;
         }
-        private void set_27_TreeViewNode_IsExpanded(object instance, object Value)
+        private void set_26_TreeViewNode_IsExpanded(object instance, object Value)
         {
             var that = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)instance;
             that.IsExpanded = (global::System.Boolean)Value;
         }
-        private object get_28_TreeViewNode_Parent(object instance)
+        private object get_27_TreeViewNode_Parent(object instance)
         {
             var that = (global::Microsoft.UI.Xaml.Controls.TreeViewNode)instance;
             return that.Parent;
@@ -951,104 +940,98 @@ namespace MemBooster.MemBooster_XamlTypeInfo
                 xamlMember.Getter = get_12_ProcessGroup_CanSelect;
                 xamlMember.Setter = set_12_ProcessGroup_CanSelect;
                 break;
-            case "MemBooster.Models.ProcessGroup.IsRecommended":
-                userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("MemBooster.Models.ProcessGroup");
-                xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "IsRecommended", "Boolean");
-                xamlMember.Getter = get_13_ProcessGroup_IsRecommended;
-                xamlMember.Setter = set_13_ProcessGroup_IsRecommended;
-                break;
             case "MemBooster.Models.ProcessGroup.RiskLabel":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("MemBooster.Models.ProcessGroup");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "RiskLabel", "String");
-                xamlMember.Getter = get_14_ProcessGroup_RiskLabel;
-                xamlMember.Setter = set_14_ProcessGroup_RiskLabel;
+                xamlMember.Getter = get_13_ProcessGroup_RiskLabel;
+                xamlMember.Setter = set_13_ProcessGroup_RiskLabel;
                 break;
             case "MemBooster.Models.ProcessGroup.RiskDescription":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("MemBooster.Models.ProcessGroup");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "RiskDescription", "String");
-                xamlMember.Getter = get_15_ProcessGroup_RiskDescription;
-                xamlMember.Setter = set_15_ProcessGroup_RiskDescription;
+                xamlMember.Getter = get_14_ProcessGroup_RiskDescription;
+                xamlMember.Setter = set_14_ProcessGroup_RiskDescription;
                 break;
             case "MemBooster.Models.ProcessGroup.MemoryText":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("MemBooster.Models.ProcessGroup");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "MemoryText", "String");
-                xamlMember.Getter = get_16_ProcessGroup_MemoryText;
+                xamlMember.Getter = get_15_ProcessGroup_MemoryText;
                 xamlMember.SetIsReadOnly();
                 break;
             case "MemBooster.Models.ProcessGroup.Respawns":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("MemBooster.Models.ProcessGroup");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "Respawns", "Boolean");
-                xamlMember.Getter = get_17_ProcessGroup_Respawns;
+                xamlMember.Getter = get_16_ProcessGroup_Respawns;
                 xamlMember.SetIsReadOnly();
                 break;
             case "MemBooster.MainWindow.SelectedApps":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("MemBooster.MainWindow");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "SelectedApps", "System.Collections.ObjectModel.ObservableCollection`1<MemBooster.Models.SelectedAppItem>");
-                xamlMember.Getter = get_18_MainWindow_SelectedApps;
+                xamlMember.Getter = get_17_MainWindow_SelectedApps;
                 xamlMember.SetIsReadOnly();
                 break;
             case "MemBooster.Models.SelectedAppItem.DisplayName":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("MemBooster.Models.SelectedAppItem");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "DisplayName", "String");
-                xamlMember.Getter = get_19_SelectedAppItem_DisplayName;
-                xamlMember.Setter = set_19_SelectedAppItem_DisplayName;
+                xamlMember.Getter = get_18_SelectedAppItem_DisplayName;
+                xamlMember.Setter = set_18_SelectedAppItem_DisplayName;
                 break;
             case "MemBooster.Models.SelectedAppItem.ExeName":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("MemBooster.Models.SelectedAppItem");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "ExeName", "String");
-                xamlMember.Getter = get_20_SelectedAppItem_ExeName;
-                xamlMember.Setter = set_20_SelectedAppItem_ExeName;
+                xamlMember.Getter = get_19_SelectedAppItem_ExeName;
+                xamlMember.Setter = set_19_SelectedAppItem_ExeName;
                 break;
             case "MemBooster.Models.SelectedAppItem.Subtitle":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("MemBooster.Models.SelectedAppItem");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "Subtitle", "String");
-                xamlMember.Getter = get_21_SelectedAppItem_Subtitle;
-                xamlMember.Setter = set_21_SelectedAppItem_Subtitle;
+                xamlMember.Getter = get_20_SelectedAppItem_Subtitle;
+                xamlMember.Setter = set_20_SelectedAppItem_Subtitle;
                 break;
             case "Microsoft.UI.Xaml.Controls.TreeViewNode.Children":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("Microsoft.UI.Xaml.Controls.TreeViewNode");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "Children", "System.Collections.Generic.IList`1<Microsoft.UI.Xaml.Controls.TreeViewNode>");
-                xamlMember.Getter = get_22_TreeViewNode_Children;
+                xamlMember.Getter = get_21_TreeViewNode_Children;
                 xamlMember.SetIsReadOnly();
                 break;
             case "Microsoft.UI.Xaml.Controls.TreeViewNode.Content":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("Microsoft.UI.Xaml.Controls.TreeViewNode");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "Content", "Object");
                 xamlMember.SetIsDependencyProperty();
-                xamlMember.Getter = get_23_TreeViewNode_Content;
-                xamlMember.Setter = set_23_TreeViewNode_Content;
+                xamlMember.Getter = get_22_TreeViewNode_Content;
+                xamlMember.Setter = set_22_TreeViewNode_Content;
                 break;
             case "Microsoft.UI.Xaml.Controls.TreeViewNode.Depth":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("Microsoft.UI.Xaml.Controls.TreeViewNode");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "Depth", "Int32");
                 xamlMember.SetIsDependencyProperty();
-                xamlMember.Getter = get_24_TreeViewNode_Depth;
+                xamlMember.Getter = get_23_TreeViewNode_Depth;
                 xamlMember.SetIsReadOnly();
                 break;
             case "Microsoft.UI.Xaml.Controls.TreeViewNode.HasChildren":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("Microsoft.UI.Xaml.Controls.TreeViewNode");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "HasChildren", "Boolean");
                 xamlMember.SetIsDependencyProperty();
-                xamlMember.Getter = get_25_TreeViewNode_HasChildren;
+                xamlMember.Getter = get_24_TreeViewNode_HasChildren;
                 xamlMember.SetIsReadOnly();
                 break;
             case "Microsoft.UI.Xaml.Controls.TreeViewNode.HasUnrealizedChildren":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("Microsoft.UI.Xaml.Controls.TreeViewNode");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "HasUnrealizedChildren", "Boolean");
-                xamlMember.Getter = get_26_TreeViewNode_HasUnrealizedChildren;
-                xamlMember.Setter = set_26_TreeViewNode_HasUnrealizedChildren;
+                xamlMember.Getter = get_25_TreeViewNode_HasUnrealizedChildren;
+                xamlMember.Setter = set_25_TreeViewNode_HasUnrealizedChildren;
                 break;
             case "Microsoft.UI.Xaml.Controls.TreeViewNode.IsExpanded":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("Microsoft.UI.Xaml.Controls.TreeViewNode");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "IsExpanded", "Boolean");
                 xamlMember.SetIsDependencyProperty();
-                xamlMember.Getter = get_27_TreeViewNode_IsExpanded;
-                xamlMember.Setter = set_27_TreeViewNode_IsExpanded;
+                xamlMember.Getter = get_26_TreeViewNode_IsExpanded;
+                xamlMember.Setter = set_26_TreeViewNode_IsExpanded;
                 break;
             case "Microsoft.UI.Xaml.Controls.TreeViewNode.Parent":
                 userType = (global::MemBooster.MemBooster_XamlTypeInfo.XamlUserType)GetXamlTypeByName("Microsoft.UI.Xaml.Controls.TreeViewNode");
                 xamlMember = new global::MemBooster.MemBooster_XamlTypeInfo.XamlMember(this, "Parent", "Microsoft.UI.Xaml.Controls.TreeViewNode");
-                xamlMember.Getter = get_28_TreeViewNode_Parent;
+                xamlMember.Getter = get_27_TreeViewNode_Parent;
                 xamlMember.SetIsReadOnly();
                 break;
             }

@@ -20,7 +20,7 @@ public partial class App : Application
         Directory.CreateDirectory(logDirectory);
         _startupLogPath = Path.Combine(logDirectory, "startup.log");
 
-        WriteStartupLog("Application startup requested. version=0.6.20 WinUI3");
+        WriteStartupLog($"Application startup requested. version={AppInfo.Version} WinUI3");
         InitializeComponent();
     }
 

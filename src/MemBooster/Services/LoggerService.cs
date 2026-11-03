@@ -8,6 +8,7 @@ namespace MemBooster.Services;
 public sealed class LoggerService
 {
     private const long MaxLogBytes = 5L * 1024L * 1024L;
+    private const int MaxSnapshotFiles = 40; // ~20 boosts (one before + one after each).
     private readonly string _logDirectory;
     private readonly object _sync = new();
 
@@ -34,8 +35,6 @@ public sealed class LoggerService
     public void WriteServices(string message) => WriteLine(ServicesLogPath, message);
 
     // One locked append for a whole batch instead of one file open per line.
-    public void WritePerformanceBatch(IEnumerable<string> messages) => WriteLines(PerformanceLogPath, messages);
-
     public void WriteServicesBatch(IEnumerable<string> messages) => WriteLines(ServicesLogPath, messages);
 
     // Buffered lines keep the time they were recorded, not the time they were flushed.
@@ -43,32 +42,11 @@ public sealed class LoggerService
 
     public void WriteServicesBatch(LogBuffer buffer) => WriteStampedLines(ServicesLogPath, buffer.Drain());
 
-    public LogOperationScope BeginOperation(string operationName, string? metadata = null)
-    {
-        return new LogOperationScope(this, operationName, metadata);
-    }
-
     public void WriteBoost(string selected, BoostResult result)
     {
         var summary = $"Boost profile=[{selected}] => {result.Summary}";
         Write(summary);
         WriteLines(BoostLogPath, result.Messages.Take(400).Select(line => "  " + line).Prepend(summary));
-    }
-
-    public void WriteRestoreCapture(IReadOnlyList<RestoreEntry> entries)
-    {
-        var header = $"Restore capture entries={entries.Count}";
-        Write(header);
-        WriteLines(BoostLogPath, entries.Take(500)
-            .Select(entry => $"  capture: {entry.DisplayName} | {entry.ExeName} | {entry.FilePath}")
-            .Prepend(header));
-    }
-
-    public void WriteRestoreResult(IReadOnlyList<RestoreEntry> entries, RestoreResult result)
-    {
-        var header = $"Restore requested entries={entries.Count} => {result.Summary}";
-        Write(header);
-        WriteLines(BoostLogPath, result.Messages.Take(400).Select(line => "  " + line).Prepend(header));
     }
 
     public void WriteSelection(string mode, IReadOnlyCollection<string> selectedNames, IEnumerable<ProcessGroup> processGroups)
@@ -99,7 +77,7 @@ public sealed class LoggerService
         var timestamp = Csv(DateTime.Now.ToString("O"));
 
         var builder = new StringBuilder();
-        builder.AppendLine("Timestamp,Label,Selected,CanSelect,DisplayName,ExeName,WorkingSetBytes,WorkingSetText,Instances,Status,Description");
+        builder.AppendLine("Timestamp,Label,Selected,CanSelect,DisplayName,ExeName,Publisher,WorkingSetBytes,WorkingSetText,Instances,Status,Description");
         foreach (var process in processGroups.OrderByDescending(p => p.WorkingSetBytes).ThenBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase))
         {
             builder.AppendLine(string.Join(",", new[]
@@ -110,6 +88,7 @@ public sealed class LoggerService
                 Csv(process.CanSelect.ToString()),
                 Csv(process.DisplayName),
                 Csv(process.ExeName),
+                Csv(process.Publisher),
                 Csv(process.WorkingSetBytes.ToString()),
                 Csv(process.MemoryText),
                 Csv(process.InstanceCount.ToString()),
@@ -120,15 +99,38 @@ public sealed class LoggerService
 
         File.WriteAllText(path, builder.ToString(), Encoding.UTF8);
         Write($"Process snapshot saved: {path}");
+        PruneSnapshots();
         return path;
     }
 
-    internal void WriteOperationEvent(string operationId, string operationName, string phase, TimeSpan elapsed, string? message = null)
+    // Keep only the newest snapshots so the folder doesn't grow forever. File names start
+    // with a sortable timestamp, so name order is age order.
+    private void PruneSnapshots()
     {
-        var extra = string.IsNullOrWhiteSpace(message) ? string.Empty : $" | {message}";
-        var line = $"operationId={operationId}; operation={operationName}; phase={phase}; elapsedMs={elapsed.TotalMilliseconds:0}{extra}";
-        Write(line);
-        WritePerformance(line);
+        try
+        {
+            var files = new DirectoryInfo(SnapshotDirectory).GetFiles("*.csv");
+            if (files.Length <= MaxSnapshotFiles)
+            {
+                return;
+            }
+
+            foreach (var file in files.OrderByDescending(f => f.Name, StringComparer.Ordinal).Skip(MaxSnapshotFiles))
+            {
+                try
+                {
+                    file.Delete();
+                }
+                catch
+                {
+                    // In use or already gone; try again next time.
+                }
+            }
+        }
+        catch
+        {
+            // Housekeeping must never break the app.
+        }
     }
 
     private void WriteLine(string path, string message)
@@ -243,40 +245,6 @@ public sealed class LoggerService
     {
         var mb = bytes / 1024d / 1024d;
         return mb >= 1024 ? $"{mb / 1024d:0.0} GB" : $"{mb:0} MB";
-    }
-}
-
-public sealed class LogOperationScope : IDisposable
-{
-    private readonly LoggerService _logger;
-    private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
-    private bool _disposed;
-
-    public string OperationId { get; } = Guid.NewGuid().ToString("N")[..8];
-    public string OperationName { get; }
-
-    public LogOperationScope(LoggerService logger, string operationName, string? metadata)
-    {
-        _logger = logger;
-        OperationName = operationName;
-        _logger.WriteOperationEvent(OperationId, OperationName, "START", TimeSpan.Zero, metadata);
-    }
-
-    public void Checkpoint(string message)
-    {
-        _logger.WriteOperationEvent(OperationId, OperationName, "CHECKPOINT", _stopwatch.Elapsed, message);
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        _stopwatch.Stop();
-        _logger.WriteOperationEvent(OperationId, OperationName, "END", _stopwatch.Elapsed);
     }
 }
 

@@ -6,6 +6,7 @@ using MemBooster.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Windowing;
 using Windows.System;
 using WinRT.Interop;
@@ -14,8 +15,8 @@ namespace MemBooster;
 
 public sealed partial class MainWindow : Window
 {
-    private const string CurrentVersion = "0.6.20";
-    private const string RepositoryUrl = "https://github.com/ox1d3x3/mem-booster";
+    private const string CurrentVersion = AppInfo.Version;
+    private const string RepositoryUrl = AppInfo.RepositoryUrl;
 
     private readonly MemoryService _memoryService = new();
     private readonly ProcessService _processService = new();
@@ -47,9 +48,7 @@ public sealed partial class MainWindow : Window
     private bool _busyOperation;
     private bool _isClosing;
     private bool _isDarkTheme = true;
-    private bool _themeAnimationRunning;
     private string _searchText = string.Empty;
-    private string? _pendingReleaseUrl;
     private DispatcherTimer? _searchDebounceTimer;
 
     public ObservableCollection<ProcessGroup> ProcessGroups { get; } = new();
@@ -58,6 +57,8 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title = $"Mem-Booster by {AppInfo.Author} v{AppInfo.Version}";
+        VersionTextBlock.Text = $"v{AppInfo.Version}";
 
         _profileService = new ProfileService();
         _appDataDirectory = _profileService.AppDataDirectory;
@@ -92,7 +93,7 @@ public sealed partial class MainWindow : Window
 
         RootGrid.Loaded += async (_, _) =>
         {
-            _ = PlayEntranceAnimationAsync();
+            PlayEntranceAnimation();
 
             // Forget services Windows already restarted (e.g. after a reboot), off the UI thread.
             var pruneTask = Task.Run(() => _serviceControlService.PruneRestartedServices(line => _loggerService.WriteServices(line)));
@@ -115,103 +116,136 @@ public sealed partial class MainWindow : Window
             });
         };
 
-        Closed += (_, _) => _isClosing = true;
+        Activated += MainWindow_Activated;
+        Closed += (_, _) =>
+        {
+            _isClosing = true;
+            _backgroundTrimTimer?.Stop();
+        };
     }
 
     // ═══════════════════════════════════════════
     // ENTRANCE + MICRO-INTERACTION ANIMATIONS
     // ═══════════════════════════════════════════
+    // The storyboards live in MainWindow.xaml (RootGrid.Resources). They only animate
+    // Opacity and RenderTransforms, which the compositor runs on its own thread: no
+    // Task.Delay frame loops waking the UI thread, and the logo pulse pauses while the
+    // window is in the background (e.g. while you're in a game).
 
-    private async Task PlayEntranceAnimationAsync()
+    private Storyboard? _logoPulseStoryboard;
+    private bool _windowActive = true;
+
+    private Storyboard StoryboardResource(string key) => (Storyboard)RootGrid.Resources[key];
+
+    private void PlayEntranceAnimation()
     {
-        await AnimateFadeSlideInAsync(HeaderCard, HeaderCardTranslate, 0);
+        var entrance = StoryboardResource("EntranceStoryboard");
+        entrance.Completed += (_, _) =>
+        {
+            // Hand the final values back to the elements, then release the animation.
+            foreach (var element in new UIElement[] { HeaderCard, MemoryCard, ProcessCard, SelectedCard, ProfileCard, ToolbarCard, ContentGrid, StatusBar })
+            {
+                element.Opacity = 1;
+            }
 
-        await Task.WhenAll(
-            AnimateFadeSlideInAsync(MemoryCard, MemoryCardTranslate, 50),
-            AnimateFadeSlideInAsync(ProcessCard, ProcessCardTranslate, 100),
-            AnimateFadeSlideInAsync(SelectedCard, SelectedCardTranslate, 150),
-            AnimateFadeSlideInAsync(ProfileCard, ProfileCardTranslate, 200));
+            foreach (var transform in new TranslateTransform[] { HeaderCardTranslate, MemoryCardTranslate, ProcessCardTranslate, SelectedCardTranslate, ProfileCardTranslate, ToolbarCardTranslate, ContentGridTranslate, StatusBarTranslate })
+            {
+                transform.Y = 0;
+            }
 
-        await Task.WhenAll(
-            AnimateFadeSlideInAsync(ToolbarCard, ToolbarCardTranslate, 0),
-            AnimateFadeSlideInAsync(ContentGrid, ContentGridTranslate, 60),
-            AnimateFadeSlideInAsync(StatusBar, StatusBarTranslate, 120));
+            entrance.Stop();
+            StartLogoPulse();
+        };
 
-        _ = AnimateLogoPulseLoopAsync();
+        entrance.Begin();
     }
 
-    private static async Task AnimateFadeSlideInAsync(UIElement element, Microsoft.UI.Xaml.Media.TranslateTransform transform, int delayMs)
+    private void StartLogoPulse()
     {
-        if (delayMs > 0)
+        if (_isClosing)
         {
-            await Task.Delay(delayMs);
+            return;
         }
 
-        var startY = transform.Y;
-        const int frames = 18;
-        for (var i = 1; i <= frames; i++)
+        _logoPulseStoryboard = StoryboardResource("LogoPulseStoryboard");
+        _logoPulseStoryboard.Begin();
+        if (!_windowActive)
         {
-            var t = i / (double)frames;
-            var eased = 1d - Math.Pow(1d - t, 3d); // cubic ease-out
-            element.Opacity = eased;
-            transform.Y = startY * (1d - eased);
-            await Task.Delay(8);
-        }
-
-        element.Opacity = 1;
-        transform.Y = 0;
-    }
-
-    private async Task AnimateLogoPulseLoopAsync()
-    {
-        while (!_isClosing)
-        {
-            for (var i = 1; i <= 18 && !_isClosing; i++)
-            {
-                LogoPulseRing.Opacity = (i / 18d) * 0.55d;
-                await Task.Delay(20);
-            }
-            for (var i = 18; i >= 0 && !_isClosing; i--)
-            {
-                LogoPulseRing.Opacity = (i / 18d) * 0.55d;
-                await Task.Delay(20);
-            }
-            await Task.Delay(2600);
+            _logoPulseStoryboard.Pause();
         }
     }
 
-    private async Task AnimateBoostButtonPressAsync()
+    private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
-        const int frames = 9;
-        for (var i = 1; i <= frames; i++)
+        _windowActive = args.WindowActivationState != WindowActivationState.Deactivated;
+
+        if (_logoPulseStoryboard is not null)
         {
-            var t = i / (double)frames;
-            var scale = 1d - (0.06d * Math.Sin(t * Math.PI));
-            BoostButtonScale.ScaleX = scale;
-            BoostButtonScale.ScaleY = scale;
-            await Task.Delay(6);
+            if (_windowActive)
+            {
+                _logoPulseStoryboard.Resume();
+            }
+            else
+            {
+                _logoPulseStoryboard.Pause();
+            }
         }
-        BoostButtonScale.ScaleX = 1;
-        BoostButtonScale.ScaleY = 1;
+
+        if (_windowActive)
+        {
+            _backgroundTrimTimer?.Stop();
+        }
+        else
+        {
+            ScheduleBackgroundTrim();
+        }
     }
 
-    private async Task AnimateBoostGlowAsync()
+    private void AnimateBoostButtonPress() => StoryboardResource("BoostPressStoryboard").Begin();
+
+    private void AnimateBoostGlow() => StoryboardResource("BoostGlowStoryboard").Begin();
+
+    // ═══════════════════════════════════════════
+    // SELF-TRIM WHILE IN THE BACKGROUND
+    // ═══════════════════════════════════════════
+    // A few seconds after the window loses focus (you switched to a game, or minimised),
+    // Mem-Booster hands its own idle memory back to Windows. Pages come back on demand
+    // when you return, so nothing is lost — it just stops holding RAM it isn't using.
+
+    private static readonly TimeSpan BackgroundTrimDelay = TimeSpan.FromSeconds(4);
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _backgroundTrimTimer;
+
+    private void ScheduleBackgroundTrim()
     {
-        for (var pulse = 0; pulse < 3 && _busyOperation; pulse++)
+        if (_backgroundTrimTimer is null)
         {
-            for (var i = 1; i <= 10; i++)
+            _backgroundTrimTimer = DispatcherQueue.CreateTimer();
+            _backgroundTrimTimer.IsRepeating = false;
+            _backgroundTrimTimer.Interval = BackgroundTrimDelay;
+            _backgroundTrimTimer.Tick += async (_, _) =>
             {
-                BoostGlowRing.Opacity = i / 10d;
-                await Task.Delay(14);
-            }
-            for (var i = 10; i >= 0; i--)
-            {
-                BoostGlowRing.Opacity = i / 10d;
-                await Task.Delay(14);
-            }
-            await Task.Delay(90);
+                if (_windowActive || _isClosing || _busyOperation)
+                {
+                    return;
+                }
+
+                try
+                {
+                    var trimmed = await Task.Run(() => SelfTrimService.TrimCurrentProcess());
+                    if (trimmed.FreedBytes > 0)
+                    {
+                        _loggerService.WritePerformance($"Background self-trim: workingSet {FormatBytes(trimmed.BeforeBytes)} -> {FormatBytes(trimmed.AfterBytes)}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _loggerService.WritePerformance($"Background self-trim failed: {ex.Message}");
+                }
+            };
         }
-        BoostGlowRing.Opacity = 0;
+
+        _backgroundTrimTimer.Stop();
+        _backgroundTrimTimer.Start();
     }
 
     private void ApplyAdminState()
@@ -231,7 +265,7 @@ public sealed partial class MainWindow : Window
 
         if (animate)
         {
-            _ = AnimateThemeToggleAsync(_isDarkTheme);
+            AnimateThemeToggle(_isDarkTheme);
         }
         else
         {
@@ -248,46 +282,14 @@ public sealed partial class MainWindow : Window
         ThemeThumb.Opacity = 1;
     }
 
-    private async Task AnimateThemeToggleAsync(bool dark)
+    private void AnimateThemeToggle(bool dark)
     {
-        if (_themeAnimationRunning)
-        {
-            SetThemeToggleVisual(dark);
-            return;
-        }
+        ThemeIconText.Text = dark ? "☾" : "☀";
+        ThemeLabelText.Text = dark ? "Dark" : "Light";
 
-        _themeAnimationRunning = true;
-
-        try
-        {
-            var start = ThemeThumbTranslate.X;
-            var end = dark ? 0d : 20d;
-            var iconChanged = false;
-
-            for (var frame = 1; frame <= 16; frame++)
-            {
-                var t = frame / 16d;
-                var eased = 1d - Math.Pow(1d - t, 3d);
-                ThemeThumbTranslate.X = start + ((end - start) * eased);
-
-                if (!iconChanged && t >= 0.45d)
-                {
-                    ThemeIconText.Text = dark ? "☾" : "☀";
-                    ThemeLabelText.Text = dark ? "Dark" : "Light";
-                    iconChanged = true;
-                }
-
-                var distanceFromMiddle = Math.Abs(t - 0.5d) * 2d;
-                ThemeIconText.Opacity = 0.45d + (0.55d * distanceFromMiddle);
-                await Task.Delay(10);
-            }
-
-            SetThemeToggleVisual(dark);
-        }
-        finally
-        {
-            _themeAnimationRunning = false;
-        }
+        var storyboard = StoryboardResource("ThemeToggleStoryboard");
+        ((DoubleAnimation)storyboard.Children[0]).To = dark ? 0d : 20d;
+        storyboard.Begin();
     }
 
     private void ApplyWindowIcon()
@@ -347,9 +349,7 @@ public sealed partial class MainWindow : Window
                     group.ApplyRespawnTag(_respawnTracker.IsRespawner(s.ExeName));
                     return group;
                 })
-                .OrderByDescending(g => g.WorkingSetBytes)
-                .ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+                .ToList(); // Already sorted by memory, then name, in ProcessService.
 
             // Whatever is left in existingByName is no longer running: unsubscribe.
             foreach (var gone in existingByName.Values)
@@ -516,17 +516,41 @@ public sealed partial class MainWindow : Window
         for (var i = 0; i < desired.Count; i++)
         {
             var target = desired[i];
-            if (i >= ProcessGroups.Count)
+            if (i < ProcessGroups.Count && ReferenceEquals(ProcessGroups[i], target))
             {
-                ProcessGroups.Add(target);
+                continue;
             }
-            else if (!ReferenceEquals(ProcessGroups[i], target))
+
+            // A row whose memory rank changed is already further down the list: take it
+            // out first, or the insert below would leave it in the list twice.
+            var currentIndex = IndexOfReference(ProcessGroups, target, i + 1);
+            if (currentIndex >= 0)
             {
-                ProcessGroups.Insert(i, target);
+                ProcessGroups.RemoveAt(currentIndex);
             }
+
+            ProcessGroups.Insert(i, target);
+        }
+
+        while (ProcessGroups.Count > desired.Count)
+        {
+            ProcessGroups.RemoveAt(ProcessGroups.Count - 1);
         }
 
         _ = AnimateProcessCountAsync(_allProcessGroups.Count);
+    }
+
+    private static int IndexOfReference(IList<ProcessGroup> list, ProcessGroup item, int startIndex)
+    {
+        for (var i = startIndex; i < list.Count; i++)
+        {
+            if (ReferenceEquals(list[i], item))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private int _displayedProcessCount;
@@ -563,12 +587,37 @@ public sealed partial class MainWindow : Window
         ProcessCountTextBlock.Text = target.ToString();
     }
 
-    private void RefreshMemory()
+    private MemoryInfo RefreshMemory()
     {
         var info = _memoryService.GetMemoryInfo();
         MemoryTextBlock.Text = info.Summary;
         ApplyMemoryBarColor(info.UsedPercent);
         _ = AnimateMemoryBarAsync(info.UsedPercent);
+        return info;
+    }
+
+    // Free physical RAM before vs after a boost. Other apps keep allocating meanwhile, so
+    // this is an honest estimate of what the boost handed back, not an exact figure.
+    // Shown right after the boost, then updated by the re-check once Windows settles.
+    private void ShowBoostGain(ulong availableBefore, MemoryInfo after, bool settled)
+    {
+        if (availableBefore == 0 || after.TotalBytes == 0)
+        {
+            return;
+        }
+
+        var freed = (long)after.AvailableBytes - (long)availableBefore;
+        LastBoostTextBlock.Text = freed >= 16L * 1024 * 1024
+            ? $"Last boost freed \u2248 {FormatBytes(freed)}"
+            : "Last boost: no measurable change in free RAM";
+        LastBoostTextBlock.Visibility = Visibility.Visible;
+        _loggerService.WritePerformance($"Boost RAM gain ({(settled ? "settled" : "immediate")}): availableBefore={FormatBytes((long)availableBefore)}; availableAfter={FormatBytes((long)after.AvailableBytes)}; freed={FormatBytes(Math.Max(0, freed))}");
+    }
+
+    private static string FreedSuffix(ulong availableBefore, MemoryInfo after)
+    {
+        var freed = (long)after.AvailableBytes - (long)availableBefore;
+        return availableBefore > 0 && freed >= 16L * 1024 * 1024 ? $" Freed \u2248 {FormatBytes(freed)} RAM." : string.Empty;
     }
 
     // Green while comfortable, amber under pressure, red when critical — an instant
@@ -697,19 +746,13 @@ public sealed partial class MainWindow : Window
         // Estimated RAM the boost would free right now — the number gamers care about.
         if (reclaimableBytes > 0)
         {
-            SelectedReclaimTextBlock.Text = $"\u2248 {FormatBytesShort(reclaimableBytes)} reclaimable";
+            SelectedReclaimTextBlock.Text = $"\u2248 {FormatBytes(reclaimableBytes)} reclaimable";
             SelectedReclaimTextBlock.Visibility = Visibility.Visible;
         }
         else
         {
             SelectedReclaimTextBlock.Visibility = Visibility.Collapsed;
         }
-    }
-
-    private static string FormatBytesShort(long bytes)
-    {
-        var mb = bytes / 1024d / 1024d;
-        return mb >= 1024d ? $"{mb / 1024d:0.0} GB" : $"{mb:0} MB";
     }
 
     // Full rebuild — used after bulk operations (refresh, Safe/Extreme/Aggressive
@@ -937,7 +980,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        _ = AnimateBoostButtonPressAsync();
+        AnimateBoostButtonPress();
 
         var runningTargets = _allProcessGroups
             .Where(p => _selectedProcessNames.Contains(p.ExeName))
@@ -1053,11 +1096,12 @@ public sealed partial class MainWindow : Window
 
         _busyOperation = true;
         _operationWatch.Restart();
-        _ = AnimateBoostGlowAsync();
+        AnimateBoostGlow();
 
         try
         {
             ShowProgress("Preparing boost...", 10);
+            var availableBefore = _memoryService.GetMemoryInfo().AvailableBytes;
 
             // Freeze the selection: the background work must never enumerate the live
             // HashSet while the UI thread could still change it.
@@ -1070,8 +1114,7 @@ public sealed partial class MainWindow : Window
             {
                 try
                 {
-                    var before = _loggerService.WriteProcessSnapshot("before-boost", groupsBefore, targets);
-                    _loggerService.Write($"WinUI before-boost snapshot: {before}");
+                    _loggerService.WriteProcessSnapshot("before-boost", groupsBefore, targets);
                 }
                 catch (Exception ex)
                 {
@@ -1146,7 +1189,8 @@ public sealed partial class MainWindow : Window
             });
 
             ShowProgress("Refreshing memory and running app list...", 80);
-            await RefreshProcessesAfterBoostAsync();
+            var memoryAfter = await RefreshProcessesAfterBoostAsync();
+            ShowBoostGain(availableBefore, memoryAfter, settled: false);
 
             ShowProgress("Boost complete.", 100);
             var serviceNote = serviceResult is { Stopped: > 0 }
@@ -1155,12 +1199,12 @@ public sealed partial class MainWindow : Window
             var respawnNote = respawnSkipSet.Count > 0
                 ? $" Left {respawnSkipSet.Count} respawning app(s) alone."
                 : string.Empty;
-            StatusTextBlock.Text = $"Boost complete: {result.Summary}.{serviceNote}{respawnNote} Re-checking in a few seconds...";
+            StatusTextBlock.Text = $"Boost complete:{FreedSuffix(availableBefore, memoryAfter)} {result.Summary}.{serviceNote}{respawnNote} Re-checking in a few seconds...";
             ElapsedTextBlock.Text = $"{_operationWatch.Elapsed.TotalSeconds:0.0}s";
 
             // Re-scan shortly after so apps Windows restarts show up, and tag them.
             var closedThisBoost = result.ClosedExeNames.Concat(serviceClosedExes).ToArray();
-            _ = CheckForRespawnsAsync(closedThisBoost, ++_boostVersion);
+            _ = CheckForRespawnsAsync(closedThisBoost, ++_boostVersion, availableBefore);
         }
         catch (Exception ex)
         {
@@ -1178,7 +1222,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task CheckForRespawnsAsync(IReadOnlyCollection<string> closedExeNames, int version)
+    private async Task CheckForRespawnsAsync(IReadOnlyCollection<string> closedExeNames, int version, ulong availableBefore)
     {
         if (closedExeNames.Count == 0)
         {
@@ -1204,8 +1248,10 @@ public sealed partial class MainWindow : Window
             _busyOperation = true;
             try
             {
-                RefreshMemory();
+                var memoryNow = RefreshMemory();
                 await ReloadProcessGroupsAsync();
+                ShowBoostGain(availableBefore, memoryNow, settled: true);
+                var freedNote = FreedSuffix(availableBefore, memoryNow);
 
                 var runningNow = new HashSet<string>(_allProcessGroups.Select(g => g.ExeName), StringComparer.OrdinalIgnoreCase);
                 var cameBack = closedExeNames.Where(runningNow.Contains).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -1223,12 +1269,12 @@ public sealed partial class MainWindow : Window
 
                 if (cameBack.Count == 0)
                 {
-                    StatusTextBlock.Text = "Re-check: everything the boost closed has stayed closed.";
+                    StatusTextBlock.Text = $"Re-check: everything the boost closed has stayed closed.{freedNote}";
                 }
                 else
                 {
                     var list = string.Join(", ", cameBack.Take(6)) + (cameBack.Count > 6 ? $" +{cameBack.Count - 6} more" : string.Empty);
-                    StatusTextBlock.Text = $"Re-check: {cameBack.Count} app(s) came straight back ({list}). Marked as Respawns.";
+                    StatusTextBlock.Text = $"Re-check: {cameBack.Count} app(s) came straight back ({list}). Marked as Respawns.{freedNote}";
                 }
 
                 var newlyText = newlyTagged.Count > 0 ? string.Join(", ", newlyTagged) : "none";
@@ -1246,9 +1292,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task RefreshProcessesAfterBoostAsync()
+    private async Task<MemoryInfo> RefreshProcessesAfterBoostAsync()
     {
-        RefreshMemory();
+        var memory = RefreshMemory();
         await ReloadProcessGroupsAsync();
 
         var groupsAfter = _allProcessGroups.ToArray();
@@ -1264,6 +1310,8 @@ public sealed partial class MainWindow : Window
                 _loggerService.Write($"WinUI after-boost snapshot failed: {ex.Message}");
             }
         });
+
+        return memory;
     }
 
     private void SaveLocalButton_Click(object sender, RoutedEventArgs e)
@@ -1494,7 +1542,6 @@ public sealed partial class MainWindow : Window
         try
         {
             var result = await _updateService.CheckLatestAsync(CurrentVersion);
-            _pendingReleaseUrl = result.ReleaseUrl;
 
             if (result.IsUpdateAvailable)
             {

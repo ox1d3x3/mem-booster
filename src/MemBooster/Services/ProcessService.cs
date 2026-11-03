@@ -247,265 +247,82 @@ public sealed class ProcessService
         var stopwatch = Stopwatch.StartNew();
         var currentPid = Environment.ProcessId;
 
-        var processes = Process.GetProcesses();
-        var scanned = processes.Length;
-
-        // Publisher (CompanyName from file version info) is read at most once per unique
-        // exe name and cached for the whole app session — version-resource reads hit the
-        // disk, so repeat refreshes must not pay that cost again.
-        var partials = new ConcurrentBag<(string ExeName, long WorkingSet)>();
-        var protectedSkips = 0;
-        var deniedSkips = 0;
-
-        Parallel.ForEach(processes, process =>
-        {
-            try
-            {
-                if (process.Id == currentPid)
-                {
-                    return;
-                }
-
-                var exeName = SafetyRules.NormaliseProcessName(process.ProcessName);
-                if (string.IsNullOrWhiteSpace(exeName))
-                {
-                    return;
-                }
-
-                // Hide hard-blocked core rows from the normal list to keep the UI useful and safe.
-                if (SafetyRules.IsBlocked(exeName))
-                {
-                    Interlocked.Increment(ref protectedSkips);
-                    return;
-                }
-
-                QueuePublisherLookup(exeName, process.Id);
-
-                partials.Add((exeName, SafeWorkingSet(process)));
-            }
-            catch
-            {
-                Interlocked.Increment(ref deniedSkips);
-                // Some protected processes deny access. Skip them instead of slowing or crashing the UI.
-            }
-            finally
-            {
-                process.Dispose();
-            }
-        });
-
-        // Aggregate the parallel results into groups on a single thread (cheap, no kernel calls).
+        // One native call for every process's PID, name and working set. No Process
+        // objects, no per-process kernel calls, no thread lists — see NativeProcessSnapshot.
+        var processes = NativeProcessSnapshot.GetProcesses();
         var groups = new Dictionary<string, MutableProcessGroup>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (exeName, workingSet) in partials)
+        var protectedSkips = 0;
+
+        foreach (var process in processes)
         {
+            if (process.ProcessId == currentPid || process.ProcessId == 0 || string.IsNullOrEmpty(process.ExeName))
+            {
+                continue;
+            }
+
+            var exeName = SafetyRules.NormaliseProcessName(process.ExeName);
+            if (string.IsNullOrWhiteSpace(exeName))
+            {
+                continue;
+            }
+
+            // Hide hard-blocked core rows from the normal list to keep the UI useful and safe.
+            if (SafetyRules.IsBlocked(exeName))
+            {
+                protectedSkips++;
+                continue;
+            }
+
             if (!groups.TryGetValue(exeName, out var group))
             {
-                var risk = SafetyRules.GetRisk(exeName);
-                group = new MutableProcessGroup(
-                    exeName,
-                    FriendlyNameFor(exeName),
-                    risk.CanSelect,
-                    SafetyRules.IsRecommendedForGamingBoost(exeName),
-                    risk.Label,
-                    risk.Description);
+                group = new MutableProcessGroup(exeName, ClassificationFor(exeName));
                 groups.Add(exeName, group);
+                QueuePublisherLookup(exeName, process.ProcessId);
             }
 
-            group.WorkingSetBytes += workingSet;
+            group.WorkingSetBytes += process.WorkingSetBytes;
             group.InstanceCount++;
         }
 
-        var result = groups.Values
-            .Select(g => new ProcessGroupSnapshot(
+        var result = new List<ProcessGroupSnapshot>(groups.Count);
+        foreach (var g in groups.Values)
+        {
+            result.Add(new ProcessGroupSnapshot(
                 g.ExeName,
-                g.DisplayName,
+                g.Classification.DisplayName,
                 PublisherFor(g.ExeName),
                 g.WorkingSetBytes,
                 g.InstanceCount,
-                g.CanSelect,
-                g.IsRecommended,
-                g.RiskLabel,
-                g.RiskDescription))
-            .OrderByDescending(g => g.WorkingSetBytes)
-            .ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+                g.Classification.CanSelect,
+                g.Classification.RiskLabel,
+                g.Classification.RiskDescription));
+        }
+
+        result.Sort(static (x, y) =>
+        {
+            var byMemory = y.WorkingSetBytes.CompareTo(x.WorkingSetBytes);
+            return byMemory != 0 ? byMemory : StringComparer.OrdinalIgnoreCase.Compare(x.DisplayName, y.DisplayName);
+        });
 
         stopwatch.Stop();
-        trace?.Invoke($"Process refresh scanned={scanned}; grouped={result.Count}; skippedProtected={protectedSkips}; skippedDeniedOrExited={deniedSkips}; elapsedMs={stopwatch.ElapsedMilliseconds}");
+        trace?.Invoke($"Process refresh scanned={processes.Count}; grouped={result.Count}; skippedProtected={protectedSkips}; elapsedMs={stopwatch.ElapsedMilliseconds}");
         return result;
     }
 
-    public IReadOnlyList<RestoreEntry> GetRestorableProcessesByExecutableNames(IReadOnlyCollection<string> executableNames, Action<string>? trace = null)
+    // Friendly name + safety classification depend only on the exe name, so work them out
+    // once per exe for the whole session instead of on every scan.
+    private static readonly ConcurrentDictionary<string, AppClassification> ClassificationCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private static AppClassification ClassificationFor(string exeName)
     {
-        var stopwatch = Stopwatch.StartNew();
-        var targets = executableNames
-            .Select(SafetyRules.NormaliseProcessName)
-            .Where(n => !string.IsNullOrWhiteSpace(n))
-            .Where(n => !SafetyRules.IsBlocked(n))
-            .Where(SafetyRules.IsRestoreCandidate)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        if (targets.Count == 0)
+        return ClassificationCache.GetOrAdd(exeName, static name =>
         {
-            trace?.Invoke("Restore capture skipped: no restore targets.");
-            return Array.Empty<RestoreEntry>();
-        }
-
-        var currentPid = Environment.ProcessId;
-        var entries = new Dictionary<string, RestoreEntry>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var process in Process.GetProcesses())
-        {
-            try
-            {
-                if (process.Id == currentPid)
-                {
-                    continue;
-                }
-
-                var exeName = SafetyRules.NormaliseProcessName(process.ProcessName);
-                if (!targets.Contains(exeName) || SafetyRules.IsBlocked(exeName) || !SafetyRules.IsRestoreCandidate(exeName))
-                {
-                    continue;
-                }
-
-                var filePath = TryGetMainModulePath(process);
-                if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
-                {
-                    continue;
-                }
-
-                if (!entries.ContainsKey(filePath))
-                {
-                    entries.Add(filePath, new RestoreEntry(
-                        exeName,
-                        FriendlyNameFor(exeName),
-                        filePath,
-                        DateTime.UtcNow));
-                }
-            }
-            catch
-            {
-                // Restore capture is best effort. Skip protected or short-lived processes.
-            }
-            finally
-            {
-                process.Dispose();
-            }
-        }
-
-        var result = entries.Values
-            .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(e => e.ExeName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        stopwatch.Stop();
-        trace?.Invoke($"Restore capture targets={targets.Count}; restorable={result.Count}; elapsedMs={stopwatch.ElapsedMilliseconds}");
-        return result;
+            var risk = SafetyRules.GetRisk(name);
+            return new AppClassification(FriendlyNameFor(name), risk.CanSelect, risk.Label, risk.Description);
+        });
     }
 
-    public RestoreResult RestoreProcesses(IReadOnlyCollection<RestoreEntry> entries, Action<string>? trace = null)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        trace?.Invoke($"Restore start entries={entries.Count}");
-
-        if (entries.Count == 0)
-        {
-            return new RestoreResult(0, 0, 0, new List<string> { "No restore entries were available." });
-        }
-
-        var runningNames = Process.GetProcesses()
-            .Select(p =>
-            {
-                try
-                {
-                    return SafetyRules.NormaliseProcessName(p.ProcessName);
-                }
-                catch
-                {
-                    return string.Empty;
-                }
-                finally
-                {
-                    p.Dispose();
-                }
-            })
-            .Where(n => !string.IsNullOrWhiteSpace(n))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var restored = 0;
-        var skipped = 0;
-        var failed = 0;
-        var messages = new List<string>();
-
-        foreach (var entry in entries
-            .Where(e => !string.IsNullOrWhiteSpace(e.FilePath))
-            .DistinctBy(e => e.FilePath, StringComparer.OrdinalIgnoreCase))
-        {
-            var exeName = SafetyRules.NormaliseProcessName(entry.ExeName);
-            if (SafetyRules.IsBlocked(exeName) || !SafetyRules.IsRestoreCandidate(exeName))
-            {
-                skipped++;
-                messages.Add($"Skipped helper/protected app: {entry.DisplayName}");
-                trace?.Invoke($"Restore skip helper/protected: {entry.DisplayName} | {exeName}");
-                continue;
-            }
-
-            if (runningNames.Contains(exeName))
-            {
-                skipped++;
-                messages.Add($"Already running: {entry.DisplayName}");
-                trace?.Invoke($"Restore skip already running: {entry.DisplayName} | {exeName}");
-                continue;
-            }
-
-            if (!SafetyRules.IsRestorePathAllowed(entry.FilePath))
-            {
-                skipped++;
-                messages.Add($"Skipped packaged/helper app: {entry.DisplayName}");
-                trace?.Invoke($"Restore skip packaged/helper path: {entry.DisplayName} | {entry.FilePath}");
-                continue;
-            }
-
-            if (!File.Exists(entry.FilePath))
-            {
-                failed++;
-                messages.Add($"Missing file: {entry.DisplayName}");
-                trace?.Invoke($"Restore missing file: {entry.DisplayName} | {entry.FilePath}");
-                continue;
-            }
-
-            try
-            {
-                var startInfo = new ProcessStartInfo(entry.FilePath)
-                {
-                    UseShellExecute = true
-                };
-
-                var directory = Path.GetDirectoryName(entry.FilePath);
-                if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
-                {
-                    startInfo.WorkingDirectory = directory;
-                }
-
-                Process.Start(startInfo);
-                runningNames.Add(exeName);
-                restored++;
-                messages.Add($"Started: {entry.DisplayName}");
-                trace?.Invoke($"Restore started: {entry.DisplayName} | {entry.FilePath}");
-            }
-            catch (Exception ex)
-            {
-                failed++;
-                messages.Add($"Failed {entry.DisplayName}: {ex.Message}");
-                trace?.Invoke($"Restore failed: {entry.DisplayName} | {ex.Message}");
-            }
-        }
-
-        stopwatch.Stop();
-        trace?.Invoke($"Restore complete restored={restored}; skipped={skipped}; failed={failed}; elapsedMs={stopwatch.ElapsedMilliseconds}");
-        return new RestoreResult(restored, skipped, failed, messages);
-    }
+    private sealed record AppClassification(string DisplayName, bool CanSelect, string RiskLabel, string RiskDescription);
 
     public BoostResult KillProcessTreesByExecutableNames(IReadOnlyCollection<string> executableNames, TerminationOptions? options = null, Action<string>? trace = null)
     {
@@ -529,20 +346,47 @@ public sealed class ProcessService
         var nativeProcesses = NativeProcessSnapshot.GetProcesses();
         nativeSnapshotWatch.Stop();
         trace?.Invoke($"Native process snapshot count={nativeProcesses.Count}; elapsedMs={nativeSnapshotWatch.ElapsedMilliseconds}");
-        var runningTargetNames = nativeProcesses
-            .Select(p => SafetyRules.NormaliseProcessName(p.ExeName))
-            .Where(targets.Contains)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var runningTargetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var rootPids = new HashSet<int>();
+        var byPid = new Dictionary<int, NativeProcessEntry>(nativeProcesses.Count);
+        foreach (var p in nativeProcesses)
+        {
+            byPid.TryAdd(p.ProcessId, p);
+            if (p.ProcessId == 0 || string.IsNullOrEmpty(p.ExeName))
+            {
+                continue;
+            }
 
-        var byParent = nativeProcesses
-            .GroupBy(p => p.ParentProcessId)
-            .ToDictionary(g => g.Key, g => g.ToList());
+            var name = SafetyRules.NormaliseProcessName(p.ExeName);
+            if (targets.Contains(name))
+            {
+                runningTargetNames.Add(name);
+                rootPids.Add(p.ProcessId);
+            }
+        }
 
-        var byPid = nativeProcesses.ToDictionary(p => p.ProcessId, p => p);
-        var rootPids = nativeProcesses
-            .Where(p => runningTargetNames.Contains(SafetyRules.NormaliseProcessName(p.ExeName)))
-            .Select(p => p.ProcessId)
-            .ToHashSet();
+        // Windows keeps a process's parent PID after the parent exits, and PIDs get reused.
+        // Only count a process as a child if it started after its current parent did —
+        // otherwise an unrelated app could be pulled into a target's tree and closed.
+        var byParent = new Dictionary<int, List<NativeProcessEntry>>();
+        foreach (var p in nativeProcesses)
+        {
+            if (p.ProcessId == p.ParentProcessId
+                || !byPid.TryGetValue(p.ParentProcessId, out var parent)
+                || p.CreateTime < parent.CreateTime)
+            {
+                continue;
+            }
+
+            if (!byParent.TryGetValue(p.ParentProcessId, out var children))
+            {
+                children = new List<NativeProcessEntry>();
+                byParent.Add(p.ParentProcessId, children);
+            }
+
+            children.Add(p);
+        }
+
         trace?.Invoke($"Boost targets={targets.Count}; runningTargetNames={runningTargetNames.Count}; rootPids={rootPids.Count}");
 
         var allPids = new HashSet<int>();
@@ -749,18 +593,6 @@ public sealed class ProcessService
         return depth;
     }
 
-    private static long SafeWorkingSet(Process process)
-    {
-        try
-        {
-            return process.WorkingSet64;
-        }
-        catch
-        {
-            return 0;
-        }
-    }
-
     // exeName -> publisher (CompanyName). Session-lifetime cache: each unique exe is
     // looked up once. Failures are cached as "Unknown publisher" so they are not retried
     // on every refresh.
@@ -873,18 +705,6 @@ public sealed class ProcessService
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr handle);
 
-    private static string? TryGetMainModulePath(Process process)
-    {
-        try
-        {
-            return process.MainModule?.FileName;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     private static string FriendlyNameFor(string exeName)
     {
         if (FriendlyNames.TryGetValue(exeName, out var friendlyName))
@@ -905,22 +725,14 @@ public sealed class ProcessService
     private sealed class MutableProcessGroup
     {
         public string ExeName { get; }
-        public string DisplayName { get; }
+        public AppClassification Classification { get; }
         public long WorkingSetBytes { get; set; }
         public int InstanceCount { get; set; }
-        public bool CanSelect { get; }
-        public bool IsRecommended { get; }
-        public string RiskLabel { get; }
-        public string RiskDescription { get; }
 
-        public MutableProcessGroup(string exeName, string displayName, bool canSelect, bool isRecommended, string riskLabel, string riskDescription)
+        public MutableProcessGroup(string exeName, AppClassification classification)
         {
             ExeName = exeName;
-            DisplayName = displayName;
-            CanSelect = canSelect;
-            IsRecommended = isRecommended;
-            RiskLabel = riskLabel;
-            RiskDescription = riskDescription;
+            Classification = classification;
         }
     }
 }
@@ -958,9 +770,3 @@ public sealed record BoostResult(int Killed, int ClosedGracefully, int Skipped, 
     public string Summary => $"Force-killed: {Killed}, closed cleanly: {ClosedGracefully}, skipped: {Skipped}, failed: {Failed}, profile entries not running: {MissingProfileEntries}";
 }
 
-public sealed record RestoreEntry(string ExeName, string DisplayName, string FilePath, DateTime CapturedUtc);
-
-public sealed record RestoreResult(int Restored, int Skipped, int Failed, IReadOnlyList<string> Messages)
-{
-    public string Summary => $"Restored: {Restored}, skipped: {Skipped}, failed: {Failed}";
-}

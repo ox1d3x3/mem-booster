@@ -11,7 +11,6 @@ public sealed class ProcessGroup : INotifyPropertyChanged
     private int _instanceCount;
     private bool _isSelected;
     private bool _canSelect = true;
-    private bool _isRecommended;
     private string _riskLabel = "Low";
     private string _riskDescription = string.Empty;
 
@@ -73,12 +72,6 @@ public sealed class ProcessGroup : INotifyPropertyChanged
         }
     }
 
-    public bool IsRecommended
-    {
-        get => _isRecommended;
-        set => SetField(ref _isRecommended, value);
-    }
-
     public string RiskLabel
     {
         get => _riskLabel;
@@ -127,7 +120,6 @@ public sealed class ProcessGroup : INotifyPropertyChanged
         WorkingSetBytes = snapshot.WorkingSetBytes;
         InstanceCount = snapshot.InstanceCount;
         CanSelect = snapshot.CanSelect;
-        IsRecommended = snapshot.IsRecommended;
         RiskLabel = snapshot.RiskLabel;
         RiskDescription = snapshot.RiskDescription;
         IsSelected = selected && CanSelect;
@@ -168,6 +160,5 @@ public sealed record ProcessGroupSnapshot(
     long WorkingSetBytes,
     int InstanceCount,
     bool CanSelect,
-    bool IsRecommended,
     string RiskLabel,
     string RiskDescription);

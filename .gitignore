@@ -1,0 +1,15 @@
+# Build output
+bin/
+obj/
+*/bin/
+*/obj/
+
+# Visual Studio personal/state files
+.vs/
+*.user
+*.suo
+*.rsuser
+
+# OS clutter
+Thumbs.db
+.DS_Store

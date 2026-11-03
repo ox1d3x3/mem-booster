@@ -4,10 +4,14 @@
     "includedFrameworks": [
       {
         "name": "Microsoft.NETCore.App",
-        "version": "8.0.32"
+        "version": "8.0.33"
       }
     ],
     "configProperties": {
+      "System.Diagnostics.Tracing.EventSource.IsSupported": false,
+      "System.GC.Concurrent": false,
+      "System.Globalization.Invariant": true,
+      "System.Globalization.PredefinedCulturesOnly": true,
       "System.Reflection.Metadata.MetadataUpdater.IsSupported": false,
       "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false,
       "CSWINRT_USE_WINDOWS_UI_XAML_PROJECTIONS": false

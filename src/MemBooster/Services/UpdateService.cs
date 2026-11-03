@@ -7,7 +7,7 @@ namespace MemBooster.Services;
 
 public sealed class UpdateService
 {
-    public const string RepositoryUrl = "https://github.com/ox1d3x3/mem-booster";
+    public const string RepositoryUrl = AppInfo.RepositoryUrl;
 
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/ox1d3x3/mem-booster/releases/latest";
     private static readonly HttpClient Client = new()
@@ -18,7 +18,7 @@ public sealed class UpdateService
     public async Task<UpdateCheckResult> CheckLatestAsync(string currentVersion, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApiUrl);
-        request.Headers.UserAgent.ParseAdd("Mem-Booster/0.6.20");
+        request.Headers.UserAgent.ParseAdd($"Mem-Booster/{AppInfo.Version}");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
 
         using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);

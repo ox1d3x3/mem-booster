@@ -10,7 +10,7 @@ namespace MemBooster.Services;
 
 public sealed class DeviceOptimizationService
 {
-    private const string StateVersion = "0.6.20";
+    private const string StateVersion = AppInfo.Version;
     private static readonly Guid UltimatePerformanceTemplateGuid = Guid.Parse("e9a42b02-d5df-448d-aa00-03f14749eb61");
     private readonly string _statePath;
 
@@ -143,35 +143,9 @@ public sealed class DeviceOptimizationService
         _statePath = Path.Combine(appDataDirectory, "device-optimise-state.xml");
     }
 
-    public string StatePath => _statePath;
-
     public bool HasActiveState() => File.Exists(_statePath);
 
     public IReadOnlyList<DeviceOptimizationOption> GetAvailableOptions() => AvailableOptions;
-
-    public IReadOnlyList<DeviceOptimizationOption> GetAppliedOptions()
-    {
-        if (!File.Exists(_statePath))
-        {
-            return Array.Empty<DeviceOptimizationOption>();
-        }
-
-        try
-        {
-            var state = LoadState(_statePath);
-            var appliedIds = NormaliseOptionIds(state.AppliedOptionIds);
-            if (appliedIds.Count == 0)
-            {
-                appliedIds = InferAppliedOptionIds(state);
-            }
-
-            return AvailableOptions.Where(option => appliedIds.Contains(option.Id)).ToArray();
-        }
-        catch
-        {
-            return Array.Empty<DeviceOptimizationOption>();
-        }
-    }
 
     public bool IsWindows11OrLater(out string description)
     {

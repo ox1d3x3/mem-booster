@@ -1,8 +1,6 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<!-- https://go.microsoft.com/fwlink/?LinkID=208121. -->
-<Project>
+﻿<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <History>True|2026-05-17T23:00:20.6966469Z||;</History>
+    <History>True|2026-11-03T10:04:03.4094470Z||;False|2026-11-03T18:03:32.8653078+08:00||;</History>
     <LastFailureDetails />
   </PropertyGroup>
 </Project>

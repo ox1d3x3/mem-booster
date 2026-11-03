@@ -46,7 +46,7 @@ public sealed class ProfileService
         var document = new XDocument(
             new XDeclaration("1.0", "utf-8", "yes"),
             new XElement("MemBoosterSettings",
-                new XAttribute("version", "0.6.20"),
+                new XAttribute("version", AppInfo.Version),
                 new XAttribute("theme", safeTheme)));
 
         document.Save(SettingsPath);
@@ -116,11 +116,11 @@ public sealed class ProfileService
         var document = new XDocument(
             new XDeclaration("1.0", "utf-8", "yes"),
             new XElement(RootName,
-                new XAttribute("version", "0.6.20"),
+                new XAttribute("version", AppInfo.Version),
                 new XAttribute("name", string.IsNullOrWhiteSpace(profile.Name) ? "Gaming Boost" : profile.Name),
                 new XAttribute("createdUtc", DateTime.UtcNow.ToString("O")),
-                new XAttribute("author", "Ox1d3x3"),
-                new XAttribute("github", "https://github.com/ox1d3x3/mem-booster"),
+                new XAttribute("author", AppInfo.Author),
+                new XAttribute("github", AppInfo.RepositoryUrl),
                 new XElement(ProcessesName,
                     names.Select(name => new XElement(ProcessName,
                         new XAttribute("executable", name))))));
@@ -136,87 +136,6 @@ public sealed class ProfileService
         }
     }
 
-    public bool HasRestoreSession()
-    {
-        if (!File.Exists(LastRestoreSessionPath))
-        {
-            return false;
-        }
-
-        try
-        {
-            return LoadRestoreSession().Count > 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public IReadOnlyList<RestoreEntry> LoadRestoreSession()
-    {
-        if (!File.Exists(LastRestoreSessionPath))
-        {
-            return Array.Empty<RestoreEntry>();
-        }
-
-        var document = XDocument.Load(LastRestoreSessionPath, LoadOptions.None);
-        var root = document.Root;
-        if (root is null || root.Name != "MemBoosterRestoreSession")
-        {
-            throw new InvalidDataException("This does not look like a Mem-Booster restore session.");
-        }
-
-        return root.Element("Apps")?
-            .Elements("App")
-            .Select(element => new RestoreEntry(
-                SafetyRules.NormaliseProcessName((string?)element.Attribute("executable") ?? string.Empty),
-                (string?)element.Attribute("displayName") ?? (string?)element.Attribute("executable") ?? "App",
-                (string?)element.Attribute("filePath") ?? string.Empty,
-                DateTime.TryParse((string?)element.Attribute("capturedUtc"), out var capturedUtc) ? capturedUtc : DateTime.UtcNow))
-            .Where(entry => !string.IsNullOrWhiteSpace(entry.ExeName))
-            .Where(entry => !SafetyRules.IsBlocked(entry.ExeName))
-            .Where(entry => !string.IsNullOrWhiteSpace(entry.FilePath))
-            .DistinctBy(entry => entry.FilePath, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(entry => entry.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToArray() ?? Array.Empty<RestoreEntry>();
-    }
-
-    public void SaveRestoreSession(IEnumerable<RestoreEntry> entries)
-    {
-        Directory.CreateDirectory(AppDataDirectory);
-
-        var safeEntries = entries
-            .Where(entry => !string.IsNullOrWhiteSpace(entry.ExeName))
-            .Where(entry => !SafetyRules.IsBlocked(entry.ExeName))
-            .Where(entry => !string.IsNullOrWhiteSpace(entry.FilePath))
-            .DistinctBy(entry => entry.FilePath, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(entry => entry.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (safeEntries.Length == 0)
-        {
-            if (File.Exists(LastRestoreSessionPath))
-            {
-                File.Delete(LastRestoreSessionPath);
-            }
-            return;
-        }
-
-        var document = new XDocument(
-            new XDeclaration("1.0", "utf-8", "yes"),
-            new XElement("MemBoosterRestoreSession",
-                new XAttribute("version", "0.6.20"),
-                new XAttribute("createdUtc", DateTime.UtcNow.ToString("O")),
-                new XElement("Apps",
-                    safeEntries.Select(entry => new XElement("App",
-                        new XAttribute("executable", SafetyRules.NormaliseProcessName(entry.ExeName)),
-                        new XAttribute("displayName", entry.DisplayName),
-                        new XAttribute("filePath", entry.FilePath),
-                        new XAttribute("capturedUtc", entry.CapturedUtc.ToString("O")))))));
-
-        document.Save(LastRestoreSessionPath);
-    }
 }
 
 public sealed record ProfileData(string Name, IEnumerable<string> ExecutableNames);

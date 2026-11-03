@@ -292,112 +292,6 @@ public static class SafetyRules
         "logi_lamparray_service.amd64.exe",
 };
 
-    private static readonly HashSet<string> RestoreExcludedProcessNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // Restore is intentionally conservative. These are helpers, shells, crash reporters,
-        // build workers, services, or short-lived child processes that should not be relaunched.
-        "cmd.exe",
-        "powershell.exe",
-        "pwsh.exe",
-        "windowsterminal.exe",
-        "openconsole.exe",
-        "terminal.exe",
-        "conhost.exe",
-        "dllhost.exe",
-        "rundll32.exe",
-        "crashpad_handler.exe",
-        "bravecrashhandler.exe",
-        "bravecrashhandler64.exe",
-        "werfault.exe",
-        "werfaultsecure.exe",
-        "msedgewebview2.exe",
-        "runtimebroker.exe",
-
-        // Developer/build helpers
-        "msbuild.exe",
-        "vbcscompiler.exe",
-        "vbcsccompiler.exe",
-        "devhub.exe",
-        "perfwatson2.exe",
-        "servicehub.host.extensibility.x64.exe",
-        "standardcollector.service.exe",
-        "workspacelauncherforvscode.exe",
-
-        // Office/cloud/helper services; restore the main app only, not its background workers.
-        "officeclicktorun.exe",
-        "filecoauth.exe",
-        "filesynchelper.exe",
-        "googledrivefs.exe",
-        "googledrivesync.exe",
-        "dropboxupdate.exe",
-        "onedrivestandaloneupdater.exe",
-
-        // PC Manager and package/background helpers. PC Manager is a packaged WindowsApps app and is slow/unreliable to relaunch by direct EXE path.
-        "mspcmanager.exe",
-        "mspcmanagercore.exe",
-        "mspcmanagerservice.exe",
-        "windowspackagemanagerserver.exe",
-        "microsoftstartfeedprovider.exe",
-        "widgetservice.exe",
-        "appactions.exe",
-        "crossdeviceresume.exe",
-
-        // Download manager and app helper processes
-        "helperservice.exe",
-        "wenativehost.exe",
-        "teracopyservice.exe",
-        "zima-backup-v2.exe",
-
-        // Windows/service/session processes should be left to Windows/services.msc, not relaunched like apps.
-        "searchindexer.exe",
-        "searchprotocolhost.exe",
-        "searchfilterhost.exe",
-        "ngciso.exe",
-        "sppsvc.exe",
-        "sqlwriter.exe",
-        "useroobebroker.exe",
-        "vmnat.exe",
-        "vmnetdhcp.exe",
-        "vmware-authd.exe",
-        "vmware-usbarbitrator64.exe",
-
-        // Monitoring/LCD tools are kept manual-only and should not be auto-restored after a boost.
-        "usblcdnew.exe"
-    };
-
-
-    private static readonly HashSet<string> ProfileAutoLoadExcludedProcessNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // Prevent old/bad profiles from reloading service/session/utility entries that caused unstable boosts.
-        "cmd.exe",
-        "powershell.exe",
-        "pwsh.exe",
-        "windowsterminal.exe",
-        "openconsole.exe",
-        "terminal.exe",
-        "conhost.exe",
-        "dllhost.exe",
-        "rundll32.exe",
-        "crashpad_handler.exe",
-        "bravecrashhandler.exe",
-        "bravecrashhandler64.exe",
-        "werfault.exe",
-        "werfaultsecure.exe",
-        "ngciso.exe",
-        "sppsvc.exe",
-        "sqlwriter.exe",
-        "useroobebroker.exe",
-        "lockapp.exe",
-        "vmnat.exe",
-        "vmnetdhcp.exe",
-        "vmware-authd.exe",
-        "vmware-usbarbitrator64.exe",
-        "hwinfo.exe",
-        "trafficmonitor.exe",
-        "trcc.exe",
-        "usblcd.exe",
-        "usblcdnew.exe"
-    };
 
 
     private static readonly HashSet<string> RecommendedGamingBoostNames = new(StringComparer.OrdinalIgnoreCase)
@@ -954,42 +848,62 @@ public static class SafetyRules
             && ExtremeGamingBoostNames.Contains(normalised);
     }
 
+    // Token lists compacted once (spaces, dashes and underscores removed) instead of on
+    // every check for every token.
+    private static readonly string[] CompactGamingTokens = CompactAll(GamingRelatedNameTokens);
+    private static readonly string[] CompactDriverOverlayTokens = CompactAll(DriverOverlayAndTuningTokens);
+    private static readonly string[] CompactSecurityNetworkTokens = CompactAll(SecurityNetworkProcessTokens);
+    private static readonly string[] CompactCoreWindowsTokens = CompactAll(CoreWindowsInfrastructureTokens);
+    private static readonly string[] CompactAggressiveAppTokens = CompactAll(AggressiveNonGamingAppTokens);
+
+    private static string Compact(string value)
+    {
+        return value.Replace(" ", string.Empty).Replace("-", string.Empty).Replace("_", string.Empty);
+    }
+
+    private static string[] CompactAll(string[] tokens)
+    {
+        return tokens.Select(Compact).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static bool ContainsAnyToken(string compactName, string[] compactTokens)
+    {
+        foreach (var token in compactTokens)
+        {
+            if (compactName.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static bool IsAggressiveRecommendedForGamingBoost(string processName)
     {
         var normalised = NormaliseProcessName(processName);
-        var compact = normalised.Replace(" ", string.Empty).Replace("-", string.Empty).Replace("_", string.Empty);
 
         if (IsBlocked(normalised) || ManualOnlyProcessNames.Contains(normalised))
         {
             return false;
         }
 
-        if (AggressiveGamingSessionNames.Contains(normalised) || RecommendedGamingBoostNames.Contains(normalised) || ExtremeGamingBoostNames.Contains(normalised))
+        // Aggressive already includes every Extreme and Safe-list name.
+        if (AggressiveGamingSessionNames.Contains(normalised))
         {
             return true;
         }
 
-        if (GamingRelatedNameTokens.Any(token => compact.Contains(token.Replace(" ", string.Empty).Replace("-", string.Empty).Replace("_", string.Empty), StringComparison.OrdinalIgnoreCase)))
+        var compact = Compact(normalised);
+        if (ContainsAnyToken(compact, CompactGamingTokens)
+            || ContainsAnyToken(compact, CompactDriverOverlayTokens)
+            || ContainsAnyToken(compact, CompactSecurityNetworkTokens)
+            || ContainsAnyToken(compact, CompactCoreWindowsTokens))
         {
             return false;
         }
 
-        if (DriverOverlayAndTuningTokens.Any(token => compact.Contains(token.Replace(" ", string.Empty).Replace("-", string.Empty).Replace("_", string.Empty), StringComparison.OrdinalIgnoreCase)))
-        {
-            return false;
-        }
-
-        if (SecurityNetworkProcessTokens.Any(token => compact.Contains(token.Replace(" ", string.Empty).Replace("-", string.Empty).Replace("_", string.Empty), StringComparison.OrdinalIgnoreCase)))
-        {
-            return false;
-        }
-
-        if (CoreWindowsInfrastructureTokens.Any(token => compact.Contains(token.Replace(" ", string.Empty).Replace("-", string.Empty).Replace("_", string.Empty), StringComparison.OrdinalIgnoreCase)))
-        {
-            return false;
-        }
-
-        if (AggressiveNonGamingAppTokens.Any(token => compact.Contains(token.Replace(" ", string.Empty).Replace("-", string.Empty).Replace("_", string.Empty), StringComparison.OrdinalIgnoreCase)))
+        if (ContainsAnyToken(compact, CompactAggressiveAppTokens))
         {
             return true;
         }
@@ -997,50 +911,6 @@ public static class SafetyRules
         // v0.6.14: do not auto-select fully unknown process names in Aggressive mode.
         // Unknown apps remain manually selectable/reviewable, but Aggressive can still catch known non-gaming suites by token.
         return false;
-    }
-
-    public static bool IsRestoreCandidate(string processName)
-    {
-        var normalised = NormaliseProcessName(processName);
-        return !IsBlocked(normalised) && !RestoreExcludedProcessNames.Contains(normalised);
-    }
-
-    public static bool IsRestorePathAllowed(string? filePath)
-    {
-        if (string.IsNullOrWhiteSpace(filePath))
-        {
-            return false;
-        }
-
-        var normalisedPath = filePath.Replace('/', '\\').ToLowerInvariant();
-
-        // Packaged WindowsApps executables are not always safe to relaunch by direct file path.
-        // Microsoft PC Manager showed a ~9 second Process.Start delay/failure in diagnostics,
-        // so it is intentionally skipped by automatic relaunch logic. Users can open it normally if needed.
-        if (normalisedPath.Contains("\\windowsapps\\microsoft.microsoftpcmanager_", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    public static bool IsKnownHelperProcess(string processName)
-    {
-        return RestoreExcludedProcessNames.Contains(NormaliseProcessName(processName));
-    }
-
-    public static bool IsAutoLoadProfileAllowed(string processName)
-    {
-        var normalised = NormaliseProcessName(processName);
-
-        // Keep old/bad profiles from reloading service/session/utility processes that older aggressive lists selected.
-        if (IsBlocked(normalised) || ProfileAutoLoadExcludedProcessNames.Contains(normalised))
-        {
-            return false;
-        }
-
-        return true;
     }
 
     public static ProcessRisk GetRisk(string processName)

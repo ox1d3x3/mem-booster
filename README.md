@@ -8,7 +8,7 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2011-0078D4?logo=windows11&logoColor=white)](https://www.microsoft.com/windows)
 [![Framework](https://img.shields.io/badge/.NET%208-WinUI%203-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Version](https://img.shields.io/badge/version-0.6.20-22C55E)](https://github.com/ox1d3x3/mem-booster/releases)
+[![Version](https://img.shields.io/badge/version-0.6.21-22C55E)](https://github.com/ox1d3x3/mem-booster/releases)
 [![Build](https://img.shields.io/badge/build-self--contained%20x64-0F6B3E)](#build-from-source)
 
 *Created by **Ox1d3x3***
@@ -55,6 +55,8 @@ Profiles are portable XML files. Load a shared profile, or one of the bundled ex
 - **Stop Services** — pause non-essential Windows services (telemetry, updaters, error reporting) from a curated safe list, and bring them all back with one click.
 - **Publisher column** — see who makes each app, and search by publisher.
 - **Reclaimable-memory estimate** — see roughly how much RAM your selection will free before you boost.
+- **Freed-RAM readout** — after each boost the memory card shows how much free RAM you actually gained, updated again once Windows settles.
+- **Light footprint** — one native call per scan (no per-process objects), animations run on the GPU compositor and pause in the background, and the app hands its own idle memory back to Windows a few seconds after you switch to your game.
 - **Optional Fast Boost** and **Smart close first** modes.
 - **Dark and light themes** with smooth animated transitions.
 - **Detailed logging and one-click diagnostics** for troubleshooting.
@@ -63,16 +65,12 @@ Profiles are portable XML files. Load a shared profile, or one of the bundled ex
 
 ## Requirements
 
-Mem-Booster requires the **Windows App SDK runtime**.
-Download it here: https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads
-
 **Latest build:** https://github.com/ox1d3x3/mem-booster/releases
 
 | Scenario | What you need |
 | --- | --- |
-| Self-contained release build | Nothing extra — the .NET 8 runtime is bundled. |
-| Framework-dependent build | [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) |
-| Building from source | Visual Studio 2022, .NET 8 SDK, and the **.NET Desktop Development** workload |
+| Release build (self-contained x64) | Windows 11 x64. Nothing else to install — the .NET 8 and Windows App SDK runtimes ship with the app. |
+| Building from source | Visual Studio 2022, .NET 8 SDK, and the **.NET Desktop Development** workload with the Windows App SDK C# templates |
 
 ---
 
@@ -128,11 +126,15 @@ Selected apps that run as **Windows services** (for example a VPN or updater ser
 
 Services are stopped at the same time as other apps are closed, so they add little to boost time. Services with running dependents are never stopped; Windows itself enforces this.
 
+Process trees are matched safely: Windows remembers a process's parent ID even after the parent exits, and IDs get reused, so a process only counts as a child if it started *after* its parent. An unrelated app can't be swept into a target's tree by a recycled ID.
+
 A few seconds after each boost, Mem-Booster re-scans. Apps that came straight back (Windows shell hosts, apps with watchdogs) are marked **Respawns** in the Status column. Later boosts leave them running instead of closing them for nothing, and they're left out of the reclaimable-memory estimate. A tag expires 7 days after it was last confirmed; the next boost then tries once more and re-tags the app if it comes back.
 
 The full boost warning appears on the first boost of a session; repeat boosts run immediately, unless a new service would be stopped. Extra clicks within 1.5 seconds of a boost finishing are ignored.
 
 On launch, Mem-Booster forgets any stopped service that Windows has already restarted (for example after a reboot), so **Restore Services** is only enabled when something is actually stopped.
+
+The memory card then shows **Last boost freed ≈ X**: the difference in free physical RAM before and after the boost. Other programs keep allocating in the meantime, so treat it as an honest estimate rather than an exact figure.
 
 Mem-Booster does **not** attempt to restore closed apps automatically. After a heavy boost, restart Windows to return to a normal background-app state.
 
@@ -192,7 +194,7 @@ Logs are stored at:
 | `device-optimise.log` | Device Optimise and revert details |
 | `services.log` | Stop Services, Restore Services and boost app-service details |
 | `startup.log` | Startup crash log |
-| `snapshots\*.csv` | Before / after process snapshots |
+| `snapshots\*.csv` | Before / after process snapshots (newest 40 kept) |
 
 - Use the **Logs** button to open the logs folder.
 - Use the **Diagnostics** button to collect a support bundle (logs, process snapshots, local profile, settings, and current process details) into a single ZIP on your Desktop.
@@ -224,7 +226,6 @@ Other helper scripts in the repository root:
 | Script | Purpose |
 | --- | --- |
 | `run-dev.bat` | Run a local development build |
-| `build-framework-dependent.bat` | Build a smaller framework-dependent x64 build |
 | `verify-build.bat` | Quick build verification |
 
 ---
@@ -238,12 +239,15 @@ mem-booster/
 ├─ src/MemBooster/
 │  ├─ MainWindow.xaml(.cs)        Main UI and interaction logic
 │  ├─ App.xaml(.cs)               Application entry point
+│  ├─ AppInfo.cs                  Version and links (one place to bump)
 │  ├─ Assets/                     Logo and icons
 │  ├─ Models/                     ProcessGroup, SelectedAppItem
 │  ├─ Converters/                 XAML value converters
 │  ├─ Profiles/                   Bundled example XML profiles
 │  └─ Services/                   Core logic:
 │     ├─ ProcessService           Scanning, grouping, process-tree termination
+│     ├─ NativeProcessSnapshot    One-call native process list (PID, parent, name, memory)
+│     ├─ SelfTrimService          Returns Mem-Booster's own idle memory while in the background
 │     ├─ MemoryService            System memory readout
 │     ├─ ProfileService           Local + XML profile save/load
 │     ├─ SafetyRules              Protected-process and risk classification
