@@ -7,7 +7,7 @@ public sealed class ProcessGroup : INotifyPropertyChanged
 {
     private string _displayName = string.Empty;
     private string _publisher = string.Empty;
-    private long _workingSetBytes;
+    private long _memoryBytes;
     private int _instanceCount;
     private bool _isSelected;
     private bool _canSelect = true;
@@ -28,12 +28,13 @@ public sealed class ProcessGroup : INotifyPropertyChanged
         set => SetField(ref _publisher, value);
     }
 
-    public long WorkingSetBytes
+    /// <summary>Private working set summed over every instance (what Task Manager shows).</summary>
+    public long MemoryBytes
     {
-        get => _workingSetBytes;
+        get => _memoryBytes;
         set
         {
-            if (SetField(ref _workingSetBytes, value))
+            if (SetField(ref _memoryBytes, value))
             {
                 OnPropertyChanged(nameof(MemoryText));
             }
@@ -84,7 +85,7 @@ public sealed class ProcessGroup : INotifyPropertyChanged
         set => SetField(ref _riskDescription, value);
     }
 
-    public string MemoryText => FormatBytes(WorkingSetBytes);
+    public string MemoryText => FormatBytes(MemoryBytes);
 
     public ProcessGroup()
     {
@@ -109,7 +110,7 @@ public sealed class ProcessGroup : INotifyPropertyChanged
         if (respawns)
         {
             RiskLabel = "Respawns";
-            RiskDescription = "Comes straight back when closed, so boosts skip it";
+            RiskDescription = "Comes straight back when closed, so boosts trim its memory instead of closing it";
         }
     }
 
@@ -117,7 +118,7 @@ public sealed class ProcessGroup : INotifyPropertyChanged
     {
         DisplayName = snapshot.DisplayName;
         Publisher = snapshot.Publisher;
-        WorkingSetBytes = snapshot.WorkingSetBytes;
+        MemoryBytes = snapshot.MemoryBytes;
         InstanceCount = snapshot.InstanceCount;
         CanSelect = snapshot.CanSelect;
         RiskLabel = snapshot.RiskLabel;
@@ -157,7 +158,7 @@ public sealed record ProcessGroupSnapshot(
     string ExeName,
     string DisplayName,
     string Publisher,
-    long WorkingSetBytes,
+    long MemoryBytes,
     int InstanceCount,
     bool CanSelect,
     string RiskLabel,

@@ -58,11 +58,11 @@ public sealed class LoggerService
         var selectedSet = new HashSet<string>(selected, StringComparer.OrdinalIgnoreCase);
         var running = processGroups
             .Where(p => selectedSet.Contains(p.ExeName))
-            .OrderByDescending(p => p.WorkingSetBytes)
+            .OrderByDescending(p => p.MemoryBytes)
             .ToList();
 
-        var estimatedRam = running.Sum(p => p.WorkingSetBytes);
-        var header = $"Selection mode={mode}; selected={selected.Count}; runningMatches={running.Count}; estimatedWorkingSet={FormatBytes(estimatedRam)}";
+        var estimatedRam = running.Sum(p => p.MemoryBytes);
+        var header = $"Selection mode={mode}; selected={selected.Count}; runningMatches={running.Count}; estimatedMemory={FormatBytes(estimatedRam)}";
         WriteLines(ActivityLogPath, running.Take(250)
             .Select(process => $"  selected-running: {process.DisplayName} | {process.ExeName} | {process.MemoryText} | instances={process.InstanceCount} | status={process.RiskLabel}")
             .Prepend(header));
@@ -77,8 +77,8 @@ public sealed class LoggerService
         var timestamp = Csv(DateTime.Now.ToString("O"));
 
         var builder = new StringBuilder();
-        builder.AppendLine("Timestamp,Label,Selected,CanSelect,DisplayName,ExeName,Publisher,WorkingSetBytes,WorkingSetText,Instances,Status,Description");
-        foreach (var process in processGroups.OrderByDescending(p => p.WorkingSetBytes).ThenBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase))
+        builder.AppendLine("Timestamp,Label,Selected,CanSelect,DisplayName,ExeName,Publisher,MemoryBytes,MemoryText,Instances,Status,Description");
+        foreach (var process in processGroups.OrderByDescending(p => p.MemoryBytes).ThenBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase))
         {
             builder.AppendLine(string.Join(",", new[]
             {
@@ -89,7 +89,7 @@ public sealed class LoggerService
                 Csv(process.DisplayName),
                 Csv(process.ExeName),
                 Csv(process.Publisher),
-                Csv(process.WorkingSetBytes.ToString()),
+                Csv(process.MemoryBytes.ToString()),
                 Csv(process.MemoryText),
                 Csv(process.InstanceCount.ToString()),
                 Csv(process.RiskLabel),

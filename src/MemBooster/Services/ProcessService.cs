@@ -247,8 +247,11 @@ public sealed class ProcessService
         var stopwatch = Stopwatch.StartNew();
         var currentPid = Environment.ProcessId;
 
-        // One native call for every process's PID, name and working set. No Process
-        // objects, no per-process kernel calls, no thread lists — see NativeProcessSnapshot.
+        // One native call for every process's PID, name and memory. No Process objects,
+        // no per-process kernel calls, no thread lists — see NativeProcessSnapshot.
+        // Memory is the private working set: the figure Task Manager shows, and a far
+        // better guide to what closing an app frees than the total working set, which
+        // counts shared DLL pages once per process (20 browser processes = 20x).
         var processes = NativeProcessSnapshot.GetProcesses();
         var groups = new Dictionary<string, MutableProcessGroup>(StringComparer.OrdinalIgnoreCase);
         var protectedSkips = 0;
@@ -280,7 +283,7 @@ public sealed class ProcessService
                 QueuePublisherLookup(exeName, process.ProcessId);
             }
 
-            group.WorkingSetBytes += process.WorkingSetBytes;
+            group.MemoryBytes += process.PrivateWorkingSetBytes;
             group.InstanceCount++;
         }
 
@@ -291,7 +294,7 @@ public sealed class ProcessService
                 g.ExeName,
                 g.Classification.DisplayName,
                 PublisherFor(g.ExeName),
-                g.WorkingSetBytes,
+                g.MemoryBytes,
                 g.InstanceCount,
                 g.Classification.CanSelect,
                 g.Classification.RiskLabel,
@@ -300,7 +303,7 @@ public sealed class ProcessService
 
         result.Sort(static (x, y) =>
         {
-            var byMemory = y.WorkingSetBytes.CompareTo(x.WorkingSetBytes);
+            var byMemory = y.MemoryBytes.CompareTo(x.MemoryBytes);
             return byMemory != 0 ? byMemory : StringComparer.OrdinalIgnoreCase.Compare(x.DisplayName, y.DisplayName);
         });
 
@@ -323,6 +326,101 @@ public sealed class ProcessService
     }
 
     private sealed record AppClassification(string DisplayName, bool CanSelect, string RiskLabel, string RiskDescription);
+
+    /// <summary>
+    /// Pages out the memory of every running process with one of these exe names, without
+    /// closing anything. Used for apps tagged Respawns (Windows shell hosts and the like),
+    /// which Windows restarts as soon as they close: trimming moves their pages to the
+    /// standby list, where Windows hands them to a game first, and a page only comes back
+    /// if the app actually touches it again.
+    /// </summary>
+    public TrimResult TrimWorkingSets(IReadOnlyCollection<string> executableNames, Action<string>? trace = null)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var targets = new HashSet<string>(
+            executableNames
+                .Select(SafetyRules.NormaliseProcessName)
+                .Where(n => !string.IsNullOrWhiteSpace(n) && !SafetyRules.IsBlocked(n)),
+            StringComparer.OrdinalIgnoreCase);
+        if (targets.Count == 0)
+        {
+            return TrimResult.Empty;
+        }
+
+        var currentPid = Environment.ProcessId;
+        var trimmed = new HashSet<int>();
+        var failed = 0;
+        long before = 0;
+
+        foreach (var p in NativeProcessSnapshot.GetProcesses())
+        {
+            if (p.ProcessId == 0 || p.ProcessId == currentPid || string.IsNullOrEmpty(p.ExeName)
+                || !targets.Contains(SafetyRules.NormaliseProcessName(p.ExeName)))
+            {
+                continue;
+            }
+
+            var error = TrimProcessWorkingSet(p.ProcessId);
+            if (error == 0)
+            {
+                trimmed.Add(p.ProcessId);
+                before += p.PrivateWorkingSetBytes;
+            }
+            else
+            {
+                // Usually access denied (5): an elevated or protected process while
+                // Mem-Booster itself isn't elevated.
+                failed++;
+                trace?.Invoke($"Trim refused: {p.ExeName} pid={p.ProcessId} error={error}");
+            }
+        }
+
+        long after = 0;
+        if (trimmed.Count > 0)
+        {
+            foreach (var p in NativeProcessSnapshot.GetProcesses())
+            {
+                if (trimmed.Contains(p.ProcessId))
+                {
+                    after += p.PrivateWorkingSetBytes;
+                }
+            }
+        }
+
+        stopwatch.Stop();
+        var result = new TrimResult(trimmed.Count, failed, before, after);
+        trace?.Invoke($"Trim complete apps={targets.Count}; processes={trimmed.Count}; failed={failed}; privateWorkingSetMB={before / 1048576}->{after / 1048576}; elapsedMs={stopwatch.ElapsedMilliseconds}");
+        return result;
+    }
+
+    // Returns 0 on success, otherwise the Win32 error code.
+    private static int TrimProcessWorkingSet(int pid)
+    {
+        const uint ProcessSetQuota = 0x0100;
+        const uint ProcessQueryLimitedInformation = 0x1000;
+        var handle = OpenProcess(ProcessSetQuota | ProcessQueryLimitedInformation, false, pid);
+        if (handle == IntPtr.Zero)
+        {
+            return LastErrorOrUnknown();
+        }
+
+        try
+        {
+            // (SIZE_T)-1 for both limits = remove as many pages as possible.
+            return SetProcessWorkingSetSize(handle, -1, -1) ? 0 : LastErrorOrUnknown();
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
+    // A failed call should never read as success, even if Windows left no error code.
+    private static int LastErrorOrUnknown()
+    {
+        var error = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+        return error == 0 ? -1 : error;
+    }
 
     public BoostResult KillProcessTreesByExecutableNames(IReadOnlyCollection<string> executableNames, TerminationOptions? options = null, Action<string>? trace = null)
     {
@@ -705,6 +803,10 @@ public sealed class ProcessService
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr handle);
 
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool SetProcessWorkingSetSize(IntPtr process, nint minimumWorkingSetSize, nint maximumWorkingSetSize);
+
     private static string FriendlyNameFor(string exeName)
     {
         if (FriendlyNames.TryGetValue(exeName, out var friendlyName))
@@ -726,7 +828,7 @@ public sealed class ProcessService
     {
         public string ExeName { get; }
         public AppClassification Classification { get; }
-        public long WorkingSetBytes { get; set; }
+        public long MemoryBytes { get; set; }
         public int InstanceCount { get; set; }
 
         public MutableProcessGroup(string exeName, AppClassification classification)
@@ -735,6 +837,15 @@ public sealed class ProcessService
             Classification = classification;
         }
     }
+}
+
+/// <param name="BytesBefore">Private working set of the trimmed processes just before.</param>
+/// <param name="BytesAfter">The same processes straight after the trim.</param>
+public sealed record TrimResult(int Trimmed, int Failed, long BytesBefore, long BytesAfter)
+{
+    public static TrimResult Empty { get; } = new(0, 0, 0, 0);
+
+    public long BytesTrimmed => Math.Max(0, BytesBefore - BytesAfter);
 }
 
 public sealed record TerminationOptions(bool TryGracefulCloseFirst, int GracefulCloseTimeoutMs, int ForceKillTimeoutMs)

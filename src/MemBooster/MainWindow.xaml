@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:converters="using:MemBooster.Converters"
-    Title="Mem-Booster by Ox1d3x3 v0.6.21">
+    Title="Mem-Booster by Ox1d3x3 v0.6.23">
 
     <Border x:Name="RootBorder"
             Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
@@ -228,7 +228,7 @@
                                 Spacing="8">
                         <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
                             <TextBlock x:Name="VersionTextBlock"
-                                       Text="v0.6.21"
+                                       Text="v0.6.23"
                                        Foreground="{StaticResource MbAccentBrush}"
                                        FontWeight="SemiBold"
                                        HorizontalAlignment="Right"/>
@@ -565,6 +565,14 @@
                     <ListView x:Name="ProcessesList"
                               SelectionMode="None"
                               Background="Transparent">
+                        <!-- Realise rows for half a screen above and below what's visible instead
+                             of the default two screens each way: far fewer live rows to build,
+                             lay out and keep in memory. -->
+                        <ListView.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ItemsStackPanel CacheLength="1"/>
+                            </ItemsPanelTemplate>
+                        </ListView.ItemsPanel>
                         <ListView.ItemContainerTransitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition IsStaggeringEnabled="True"/>
@@ -596,6 +604,7 @@
                                                FontWeight="SemiBold"/>
                                     <TextBlock Grid.Column="3"
                                                Text="Memory"
+                                               ToolTipService.ToolTip="Private working set across all instances: the same figure Task Manager shows."
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                FontWeight="SemiBold"/>
                                     <TextBlock Grid.Column="4"
@@ -789,6 +798,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel>
                         <TextBlock x:Name="StatusTextBlock"
@@ -810,8 +820,14 @@
                                        FontSize="11"/>
                         </StackPanel>
                     </StackPanel>
+                    <TextBlock Grid.Column="1"
+                               Text="Closes itself after 15 min unused"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               ToolTipService.ToolTip="Mem-Booster is meant to run once: boost, then close it. If it's left open and not used for 15 minutes, it closes itself quietly (never during a boost). Stopped services and Device Optimise changes stay as they are; reopen Mem-Booster to restore them."/>
                     <TextBlock x:Name="ElapsedTextBlock"
-                               Grid.Column="1"
+                               Grid.Column="2"
                                Text=""
                                Foreground="{StaticResource MbAccentBrush}"
                                FontSize="12"

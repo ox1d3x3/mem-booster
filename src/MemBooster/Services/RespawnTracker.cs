@@ -8,9 +8,9 @@ namespace MemBooster.Services;
 /// hosts, apps restarted by a watchdog or scheduled task, and so on).
 ///
 /// An app is tagged when it was closed by a boost and is running again at the
-/// post-boost re-scan. Boosts skip tagged apps, so a tag can't be disproved by a later
-/// boost; instead each tag expires <see cref="TagLifetime"/> after it was last
-/// confirmed. The next boost then closes the app once more and re-tags it only if it
+/// post-boost re-scan. Boosts trim tagged apps instead of closing them, so a tag can't
+/// be disproved by a later boost; instead each tag expires <see cref="TagLifetime"/>
+/// after it was last confirmed. The next boost then closes the app once more and re-tags it only if it
 /// comes back again.
 /// </summary>
 public sealed class RespawnTracker
@@ -23,7 +23,13 @@ public sealed class RespawnTracker
     public RespawnTracker(string appDataDirectory)
     {
         _path = Path.Combine(appDataDirectory, "respawners.json");
-        _confirmedUtc = Load(_path);
+        _confirmedUtc = Load(_path, out var legacyFormat);
+        if (legacyFormat)
+        {
+            // Write the dated format straight away. Otherwise every launch would treat the
+            // old undated tags as "confirmed now" and they would never expire.
+            Save();
+        }
     }
 
     public bool IsRespawner(string exeName)
@@ -67,8 +73,9 @@ public sealed class RespawnTracker
         return newlyTagged;
     }
 
-    private static Dictionary<string, DateTime> Load(string path)
+    private static Dictionary<string, DateTime> Load(string path, out bool legacyFormat)
     {
+        legacyFormat = false;
         var result = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -97,6 +104,7 @@ public sealed class RespawnTracker
             {
                 // v0.6.19 format: ["exe", ...] with no dates. Treat as confirmed now so
                 // existing tags carry over and expire on the normal schedule.
+                legacyFormat = true;
                 foreach (var item in document.RootElement.EnumerateArray())
                 {
                     var name = item.ValueKind == JsonValueKind.String ? item.GetString() : null;

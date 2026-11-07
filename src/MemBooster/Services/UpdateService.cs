@@ -52,6 +52,19 @@ public sealed class UpdateService
             hasNewerVersion);
     }
 
+    /// <summary>True when <paramref name="latest"/> is a newer version than <paramref name="current"/>.</summary>
+    public static bool IsNewer(string? latest, string current)
+    {
+        return !string.IsNullOrWhiteSpace(latest)
+            && CompareVersionStrings(NormaliseVersion(latest), NormaliseVersion(current)) > 0;
+    }
+
+    /// <summary>Negative, zero or positive as <paramref name="latest"/> is older, equal or newer.</summary>
+    public static int Compare(string latest, string current)
+    {
+        return CompareVersionStrings(NormaliseVersion(latest), NormaliseVersion(current));
+    }
+
     private static string GetString(JsonElement root, string propertyName)
     {
         return root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String

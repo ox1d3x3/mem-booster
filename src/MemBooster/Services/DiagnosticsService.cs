@@ -77,13 +77,29 @@ public sealed class DiagnosticsService
         text.AppendLine($"AppData: {appDataDirectory}");
         text.AppendLine("Logs: " + Path.Combine(appDataDirectory, "logs"));
         text.AppendLine($"Base directory: {AppContext.BaseDirectory}");
+        text.AppendLine($"Own memory: {SelfTrimService.DescribeCurrentProcess()}");
+        text.AppendLine($"GC: server={System.Runtime.GCSettings.IsServerGC}; latencyMode={System.Runtime.GCSettings.LatencyMode}");
         File.WriteAllText(Path.Combine(outputDirectory, "app-info.txt"), text.ToString(), Encoding.UTF8);
     }
 
     private static void WriteRunningProcesses(string outputDirectory)
     {
         var csv = new StringBuilder();
-        csv.AppendLine("Id,ProcessName,ExeName,WorkingSetMB,MainWindowTitle,Path");
+        csv.AppendLine("Id,ProcessName,ExeName,WorkingSetMB,PrivateWorkingSetMB,MainWindowTitle,Path");
+
+        // Private working set (Task Manager's "Memory") from one native snapshot.
+        var privateByPid = new Dictionary<int, long>();
+        try
+        {
+            foreach (var entry in NativeProcessSnapshot.GetProcesses())
+            {
+                privateByPid.TryAdd(entry.ProcessId, entry.PrivateWorkingSetBytes);
+            }
+        }
+        catch
+        {
+            // Column stays empty.
+        }
 
         foreach (var process in Process.GetProcesses().OrderBy(p => p.ProcessName, StringComparer.OrdinalIgnoreCase))
         {
@@ -92,6 +108,9 @@ public sealed class DiagnosticsService
                 var processName = process.ProcessName;
                 var exeName = SafetyRules.NormaliseProcessName(processName);
                 var workingSetMb = process.WorkingSet64 / 1024d / 1024d;
+                var privateMb = privateByPid.TryGetValue(process.Id, out var privateBytes)
+                    ? (privateBytes / 1024d / 1024d).ToString("0.0")
+                    : string.Empty;
                 var title = Safe(() => process.MainWindowTitle) ?? string.Empty;
                 var path = Safe(() => process.MainModule?.FileName) ?? string.Empty;
 
@@ -101,6 +120,7 @@ public sealed class DiagnosticsService
                     Csv(processName),
                     Csv(exeName),
                     workingSetMb.ToString("0.0"),
+                    privateMb,
                     Csv(title),
                     Csv(path)
                 }));

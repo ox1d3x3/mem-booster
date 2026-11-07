@@ -8,7 +8,7 @@
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2011-0078D4?logo=windows11&logoColor=white)](https://www.microsoft.com/windows)
 [![Framework](https://img.shields.io/badge/.NET%208-WinUI%203-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Version](https://img.shields.io/badge/version-0.6.21-22C55E)](https://github.com/ox1d3x3/mem-booster/releases)
+[![Version](https://img.shields.io/badge/version-0.6.23-22C55E)](https://github.com/ox1d3x3/mem-booster/releases)
 [![Build](https://img.shields.io/badge/build-self--contained%20x64-0F6B3E)](#build-from-source)
 
 *Created by **Ox1d3x3***
@@ -47,7 +47,7 @@ Profiles are portable XML files. Load a shared profile, or one of the bundled ex
 ## Features
 
 - **Native Windows 11 app** built with .NET 8 and **WinUI 3** (Windows App SDK).
-- **Live system snapshot** — memory usage, running app count, and per-app memory grouped by executable.
+- **Live system snapshot** — memory usage, running app count, and per-app memory grouped by executable. App memory is the private working set, the same figure Task Manager shows.
 - **Three one-click selection modes** — Safe, Extreme, and Aggressive.
 - **Safety-aware** — protected system, driver, security, launcher, overlay, VPN, and anti-cheat processes are never auto-selected.
 - **Local and shareable profiles** — save your selection locally or export/import portable XML profiles.
@@ -55,8 +55,10 @@ Profiles are portable XML files. Load a shared profile, or one of the bundled ex
 - **Stop Services** — pause non-essential Windows services (telemetry, updaters, error reporting) from a curated safe list, and bring them all back with one click.
 - **Publisher column** — see who makes each app, and search by publisher.
 - **Reclaimable-memory estimate** — see roughly how much RAM your selection will free before you boost.
-- **Freed-RAM readout** — after each boost the memory card shows how much free RAM you actually gained, updated again once Windows settles.
-- **Light footprint** — one native call per scan (no per-process objects), animations run on the GPU compositor and pause in the background, and the app hands its own idle memory back to Windows a few seconds after you switch to your game.
+- **Freed-RAM readout** — after each boost the memory card shows how much free RAM you actually gained, updated again once Windows settles. Back-to-back boosts are counted together.
+- **Respawn-aware** — apps Windows restarts the moment they close (Start menu, search and input hosts, web views) are trimmed instead: their memory is paged out and they keep running.
+- **Light footprint** — one native call per scan (no per-process objects), animations run on the GPU compositor and pause in the background, and the app hands its own idle memory back to Windows a few seconds after you switch to your game. Update checks happen at most once a day.
+- **Run once, then gone** — open it, boost, close it. If you forget, it closes itself quietly after 15 minutes unused: no dialog, no focus change, never during a boost.
 - **Optional Fast Boost** and **Smart close first** modes.
 - **Dark and light themes** with smooth animated transitions.
 - **Detailed logging and one-click diagnostics** for troubleshooting.
@@ -120,15 +122,17 @@ If a profile contains apps that are not installed or not currently running, Mem-
 
 Mem-Booster scans running user-level apps and groups them by executable name. You can select apps manually, load a saved profile, or use one of the built-in selection modes.
 
-When you press **BOOST NOW**, Mem-Booster closes the selected apps and their related process trees. It skips missing apps automatically and avoids protected Windows, driver, security, gaming, overlay, VPN, firewall, and anti-cheat processes.
+When you press **BOOST NOW**, Mem-Booster closes the selected apps and their related process trees. It skips missing apps automatically and avoids protected Windows, driver, security (including Microsoft Defender and SmartScreen), gaming, overlay, VPN, firewall, and anti-cheat processes.
 
 Selected apps that run as **Windows services** (for example a VPN or updater service) are stopped through Windows' Service Control Manager instead of being killed. A killed service is restarted by Windows within seconds; a stopped one stays stopped until you click **Restore Services** or restart. This needs administrator mode, and the boost warning names every service it will stop.
 
-Services are stopped at the same time as other apps are closed, so they add little to boost time. Services with running dependents are never stopped; Windows itself enforces this.
+Services are stopped at the same time as other apps are closed, so they add little to boost time. A boost waits at most 3 seconds for them: a slow one (Windows Search can take 10+ seconds to flush its index) finishes stopping on its own, and its process is never killed mid-shutdown. Services with running dependents are never stopped; Windows itself enforces this.
 
 Process trees are matched safely: Windows remembers a process's parent ID even after the parent exits, and IDs get reused, so a process only counts as a child if it started *after* its parent. An unrelated app can't be swept into a target's tree by a recycled ID.
 
-A few seconds after each boost, Mem-Booster re-scans. Apps that came straight back (Windows shell hosts, apps with watchdogs) are marked **Respawns** in the Status column. Later boosts leave them running instead of closing them for nothing, and they're left out of the reclaimable-memory estimate. A tag expires 7 days after it was last confirmed; the next boost then tries once more and re-tags the app if it comes back.
+A few seconds after each boost, Mem-Booster re-scans. Apps that came straight back (Windows shell hosts, apps with watchdogs) are marked **Respawns** in the Status column. Later boosts don't close them for nothing: they **trim** them instead, paging their memory out while the app keeps running. Windows can then hand that memory to your game first, and a page only comes back if the app actually uses it (for example when you open the Start menu). Trimming isn't the same as closing, so these apps stay out of the reclaimable-memory estimate. Elevated apps (such as HWiNFO) can only be trimmed when Mem-Booster runs as administrator. A tag expires 7 days after it was last confirmed; the next boost then tries closing the app once more and re-tags it if it comes back.
+
+Mem-Booster is meant to run once per gaming session. If it's left open and nobody clicks, scrolls or types in it for 15 minutes, it closes itself quietly. It waits if a boost or other operation is running, dismisses an unanswered dialog first (same as Cancel), and never closes while the Explorer file picker is open. Stopped services and Device Optimise changes stay as they are; reopen Mem-Booster to restore them.
 
 The full boost warning appears on the first boost of a session; repeat boosts run immediately, unless a new service would be stopped. Extra clicks within 1.5 seconds of a boost finishing are ignored.
 

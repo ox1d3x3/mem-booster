@@ -4,8 +4,8 @@ using System.Runtime.InteropServices;
 namespace MemBooster.Services;
 
 /// <summary>
-/// One-call snapshot of every running process: PID, parent PID, image name, working set
-/// and start time.
+/// One-call snapshot of every running process: PID, parent PID, image name, total and
+/// private working set, and start time.
 ///
 /// Uses NtQuerySystemInformation(SystemProcessInformation), the same call .NET's
 /// Process.GetProcesses() makes internally — but without building a Process object (and
@@ -20,6 +20,7 @@ public static class NativeProcessSnapshot
 
     // SYSTEM_PROCESS_INFORMATION field offsets on 64-bit Windows (same layout .NET uses).
     private const int OffsetNextEntry = 0;
+    private const int OffsetWorkingSetPrivateSize = 8;
     private const int OffsetCreateTime = 32;
     private const int OffsetImageNameLength = 56;
     private const int OffsetImageNameBuffer = 64;
@@ -82,12 +83,13 @@ public static class NativeProcessSnapshot
             var namePtr = Marshal.ReadIntPtr(entry, OffsetImageNameBuffer);
             var workingSet = (long)Marshal.ReadIntPtr(entry, OffsetWorkingSetSize);
             var createTime = Marshal.ReadInt64(entry, OffsetCreateTime);
+            var privateWorkingSet = Marshal.ReadInt64(entry, OffsetWorkingSetPrivateSize);
 
             var name = nameBytes > 0 && namePtr != IntPtr.Zero
                 ? CanonicalExeName(Marshal.PtrToStringUni(namePtr, nameBytes / 2))
                 : string.Empty; // PID 0 (System Idle Process) has no name.
 
-            results.Add(new NativeProcessEntry(pid, parentPid, name, workingSet, createTime));
+            results.Add(new NativeProcessEntry(pid, parentPid, name, workingSet, privateWorkingSet, createTime));
 
             var next = Marshal.ReadInt32(entry, OffsetNextEntry);
             if (next <= 0)
@@ -127,9 +129,10 @@ public static class NativeProcessSnapshot
                     workingSet = 0;
                 }
 
-                // Parent PID / start time aren't available here; process trees fall back to roots only.
+                // Parent PID, start time and private working set aren't available cheaply here:
+                // trees fall back to roots only and memory to the total working set.
                 // Raw name (no ".exe"): callers normalise, which handles special names like "System".
-                results.Add(new NativeProcessEntry(process.Id, 0, process.ProcessName, workingSet, 0));
+                results.Add(new NativeProcessEntry(process.Id, 0, process.ProcessName, workingSet, workingSet, 0));
             }
             catch
             {
@@ -148,5 +151,7 @@ public static class NativeProcessSnapshot
     private static extern uint NtQuerySystemInformation(int systemInformationClass, IntPtr systemInformation, int systemInformationLength, out int returnLength);
 }
 
+/// <param name="WorkingSetBytes">Total working set, including pages shared with other processes.</param>
+/// <param name="PrivateWorkingSetBytes">Pages only this process uses (Task Manager's "Memory").</param>
 /// <param name="CreateTime">Process start time as a FILETIME tick count (0 when unknown).</param>
-public readonly record struct NativeProcessEntry(int ProcessId, int ParentProcessId, string ExeName, long WorkingSetBytes, long CreateTime);
+public readonly record struct NativeProcessEntry(int ProcessId, int ParentProcessId, string ExeName, long WorkingSetBytes, long PrivateWorkingSetBytes, long CreateTime);

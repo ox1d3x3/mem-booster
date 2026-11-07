@@ -39,6 +39,12 @@ public sealed partial class MainWindow : Window
     private static readonly TimeSpan BoostCooldown = TimeSpan.FromSeconds(1.5);
     private DateTime _lastBoostFinishedUtc = DateTime.MinValue;
 
+    // Boosts this close together count as one clean-up for the freed-RAM readout, so a
+    // quick second click to catch a straggler doesn't replace "3.7 GB" with "no change".
+    private static readonly TimeSpan BoostChainWindow = TimeSpan.FromSeconds(30);
+    private ulong _boostChainBaseline;
+    private int _boostChainCount;
+
     private readonly HashSet<string> _selectedProcessNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ProcessGroup> _allProcessGroups = new();
     private readonly Stopwatch _operationWatch = new();
@@ -94,6 +100,7 @@ public sealed partial class MainWindow : Window
         RootGrid.Loaded += async (_, _) =>
         {
             PlayEntranceAnimation();
+            StartAutoClose();
 
             // Forget services Windows already restarted (e.g. after a reboot), off the UI thread.
             var pruneTask = Task.Run(() => _serviceControlService.PruneRestartedServices(line => _loggerService.WriteServices(line)));
@@ -109,11 +116,9 @@ public sealed partial class MainWindow : Window
             {
                 _loggerService.WriteServices($"Startup service prune failed: {ex.Message}");
             }
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(1500);
-                await CheckUpdatesAsync(silent: true);
-            });
+            // On the UI thread: the result updates a button. (Running it inside Task.Run,
+            // as before, threw on that button update and failed silently every launch.)
+            _ = CheckUpdatesOnStartupAsync();
         };
 
         Activated += MainWindow_Activated;
@@ -121,6 +126,7 @@ public sealed partial class MainWindow : Window
         {
             _isClosing = true;
             _backgroundTrimTimer?.Stop();
+            _autoCloseTimer?.Stop();
         };
     }
 
@@ -194,6 +200,7 @@ public sealed partial class MainWindow : Window
         if (_windowActive)
         {
             _backgroundTrimTimer?.Stop();
+            NoteInteraction(); // Switching back to the app counts as using it.
         }
         else
         {
@@ -204,6 +211,114 @@ public sealed partial class MainWindow : Window
     private void AnimateBoostButtonPress() => StoryboardResource("BoostPressStoryboard").Begin();
 
     private void AnimateBoostGlow() => StoryboardResource("BoostGlowStoryboard").Begin();
+
+    // ═══════════════════════════════════════════
+    // AUTO-CLOSE WHEN FORGOTTEN
+    // ═══════════════════════════════════════════
+    // Mem-Booster is a run-once tool: open it, boost, close it. If it's left open and
+    // nobody uses it for 15 minutes, it closes itself quietly: no dialog, no sound, no
+    // focus change, so it can't interrupt a game or anything else in your session. It
+    // never closes in the middle of a boost or any other operation. Stopped services and
+    // Device Optimise changes are left exactly as they are; reopen to restore them.
+
+    private static readonly TimeSpan AutoCloseAfter = TimeSpan.FromMinutes(15);
+    private DateTime _lastInteractionUtc = DateTime.UtcNow;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _autoCloseTimer;
+    private ContentDialog? _openDialog;
+
+    // The Explorer open/save picker runs its own modal loop on the UI thread, so the
+    // timer can still tick while it's up. Never close the window out from under it.
+    private bool _nativeDialogOpen;
+
+    private void StartAutoClose()
+    {
+        if (_autoCloseTimer is not null)
+        {
+            return;
+        }
+
+        NoteInteraction();
+        _autoCloseTimer = DispatcherQueue.CreateTimer();
+        _autoCloseTimer.IsRepeating = false;
+        _autoCloseTimer.Tick += (_, _) => CheckAutoClose();
+        ScheduleAutoCloseCheck(AutoCloseAfter);
+
+        // Clicks, scrolling and typing anywhere in the window count as use, even when a
+        // control already handled them. Mouse movement deliberately doesn't (too chatty).
+        RootGrid.AddHandler(UIElement.PointerPressedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => NoteInteraction()), true);
+        RootGrid.AddHandler(UIElement.PointerWheelChangedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => NoteInteraction()), true);
+        RootGrid.AddHandler(UIElement.KeyDownEvent, new Microsoft.UI.Xaml.Input.KeyEventHandler((_, _) => NoteInteraction()), true);
+    }
+
+    private void NoteInteraction() => _lastInteractionUtc = DateTime.UtcNow;
+
+    // One timer, re-armed for exactly the time left: it wakes about once per 15 minutes
+    // while idle instead of polling.
+    private void ScheduleAutoCloseCheck(TimeSpan delay)
+    {
+        if (_autoCloseTimer is null || _isClosing)
+        {
+            return;
+        }
+
+        _autoCloseTimer.Stop();
+        _autoCloseTimer.Interval = delay < TimeSpan.FromSeconds(1) ? TimeSpan.FromSeconds(1) : delay;
+        _autoCloseTimer.Start();
+    }
+
+    private void CheckAutoClose()
+    {
+        if (_isClosing)
+        {
+            return;
+        }
+
+        var idle = DateTime.UtcNow - _lastInteractionUtc;
+        if (idle < AutoCloseAfter)
+        {
+            ScheduleAutoCloseCheck(AutoCloseAfter - idle);
+            return;
+        }
+
+        if (_busyOperation || _nativeDialogOpen)
+        {
+            ScheduleAutoCloseCheck(TimeSpan.FromMinutes(1)); // Never mid-operation.
+            return;
+        }
+
+        if (_openDialog is not null)
+        {
+            // A dialog nobody answered: dismiss it (same as Cancel), let the code behind
+            // it finish, then close on the next check.
+            _loggerService.Write("Auto-close: dismissing an unanswered dialog first.");
+            _openDialog.Hide();
+            ScheduleAutoCloseCheck(TimeSpan.FromSeconds(2));
+            return;
+        }
+
+        _loggerService.Write($"Auto-close: not used for {AutoCloseAfter.TotalMinutes:0} minutes, closing quietly.");
+        Close();
+    }
+
+    // Every dialog goes through here so auto-close knows when one is waiting for an answer.
+    private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
+    {
+        _openDialog = dialog;
+        NoteInteraction();
+        try
+        {
+            return await dialog.ShowAsync();
+        }
+        finally
+        {
+            if (ReferenceEquals(_openDialog, dialog))
+            {
+                _openDialog = null;
+            }
+
+            NoteInteraction();
+        }
+    }
 
     // ═══════════════════════════════════════════
     // SELF-TRIM WHILE IN THE BACKGROUND
@@ -234,7 +349,7 @@ public sealed partial class MainWindow : Window
                     var trimmed = await Task.Run(() => SelfTrimService.TrimCurrentProcess());
                     if (trimmed.FreedBytes > 0)
                     {
-                        _loggerService.WritePerformance($"Background self-trim: workingSet {FormatBytes(trimmed.BeforeBytes)} -> {FormatBytes(trimmed.AfterBytes)}");
+                        _loggerService.WritePerformance($"Background self-trim: workingSet {FormatBytes(trimmed.BeforeBytes)} -> {FormatBytes(trimmed.AfterBytes)}; before: {trimmed.BeforeDetail}");
                     }
                 }
                 catch (Exception ex)
@@ -607,17 +722,25 @@ public sealed partial class MainWindow : Window
         }
 
         var freed = (long)after.AvailableBytes - (long)availableBefore;
+        var label = _boostChainCount > 1 ? "Back-to-back boosts freed" : "Last boost freed";
         LastBoostTextBlock.Text = freed >= 16L * 1024 * 1024
-            ? $"Last boost freed \u2248 {FormatBytes(freed)}"
+            ? $"{label} \u2248 {FormatBytes(freed)}"
             : "Last boost: no measurable change in free RAM";
         LastBoostTextBlock.Visibility = Visibility.Visible;
-        _loggerService.WritePerformance($"Boost RAM gain ({(settled ? "settled" : "immediate")}): availableBefore={FormatBytes((long)availableBefore)}; availableAfter={FormatBytes((long)after.AvailableBytes)}; freed={FormatBytes(Math.Max(0, freed))}");
+        _loggerService.WritePerformance($"Boost RAM gain ({(settled ? "settled" : "immediate")}; chain={_boostChainCount}): availableBefore={FormatBytes((long)availableBefore)}; availableAfter={FormatBytes((long)after.AvailableBytes)}; freed={FormatBytes(Math.Max(0, freed))}");
     }
 
-    private static string FreedSuffix(ulong availableBefore, MemoryInfo after)
+    private string FreedSuffix(ulong availableBefore, MemoryInfo after)
     {
         var freed = (long)after.AvailableBytes - (long)availableBefore;
-        return availableBefore > 0 && freed >= 16L * 1024 * 1024 ? $" Freed \u2248 {FormatBytes(freed)} RAM." : string.Empty;
+        if (availableBefore == 0 || freed < 16L * 1024 * 1024)
+        {
+            return string.Empty;
+        }
+
+        return _boostChainCount > 1
+            ? $" Freed \u2248 {FormatBytes(freed)} RAM together with the boost just before."
+            : $" Freed \u2248 {FormatBytes(freed)} RAM.";
     }
 
     // Green while comfortable, amber under pressure, red when critical — an instant
@@ -680,7 +803,7 @@ public sealed partial class MainWindow : Window
         UpdateSelectionCounts();
     }
 
-    // Insert a single chip in the right place (sorted by working set, then name)
+    // Insert a single chip in the right place (sorted by memory, then name)
     // instead of clearing and rebuilding the whole sidebar collection.
     private void AddSelectedAppItem(ProcessGroup group)
     {
@@ -699,8 +822,8 @@ public sealed partial class MainWindow : Window
         while (insertIndex < SelectedApps.Count)
         {
             var current = _allProcessGroups.FirstOrDefault(g => string.Equals(g.ExeName, SelectedApps[insertIndex].ExeName, StringComparison.OrdinalIgnoreCase));
-            var currentWeight = current?.WorkingSetBytes ?? 0;
-            if (group.WorkingSetBytes > currentWeight)
+            var currentWeight = current?.MemoryBytes ?? 0;
+            if (group.MemoryBytes > currentWeight)
             {
                 break;
             }
@@ -733,7 +856,7 @@ public sealed partial class MainWindow : Window
                 // Apps that come straight back don't free memory for long; leave them out.
                 if (!group.Respawns)
                 {
-                    reclaimableBytes += group.WorkingSetBytes;
+                    reclaimableBytes += group.MemoryBytes;
                 }
             }
         }
@@ -764,7 +887,7 @@ public sealed partial class MainWindow : Window
 
         var selectedGroups = _allProcessGroups
             .Where(g => _selectedProcessNames.Contains(g.ExeName))
-            .OrderByDescending(g => g.WorkingSetBytes)
+            .OrderByDescending(g => g.MemoryBytes)
             .ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -957,7 +1080,7 @@ public sealed partial class MainWindow : Window
     {
         var running = _allProcessGroups
             .Where(p => _selectedProcessNames.Contains(p.ExeName))
-            .OrderByDescending(p => p.WorkingSetBytes)
+            .OrderByDescending(p => p.MemoryBytes)
             .ToList();
 
         var body = running.Count == 0
@@ -1041,33 +1164,28 @@ public sealed partial class MainWindow : Window
         }
 
         // Apps tagged Respawns come straight back when closed, so closing them only causes
-        // churn (e.g. the Start menu flickering). Skip them. A service-backed app is never
-        // skipped: stopping its service is what keeps it closed.
+        // churn (e.g. the Start menu flickering). They're trimmed instead: memory paged
+        // out, app left running. A service-backed app is never in this set: stopping its
+        // service is what keeps it closed.
         var serviceExeSet = new HashSet<string>(appServices.Select(t => t.ExeName), StringComparer.OrdinalIgnoreCase);
         var respawnSkipSet = new HashSet<string>(
             runningTargets.Where(p => p.Respawns && !serviceExeSet.Contains(p.ExeName)).Select(p => p.ExeName),
             StringComparer.OrdinalIgnoreCase);
         var closableTargets = runningTargets.Where(p => !respawnSkipSet.Contains(p.ExeName)).ToList();
 
-        if (closableTargets.Count == 0)
-        {
-            await ShowMessageAsync(
-                "Nothing to boost",
-                "Every selected app that's running is marked Respawns: Windows restarts them as soon as they close, so boosting them has no lasting effect.");
-            return;
-        }
-
         var unseenServices = appServices.Where(t => !_acknowledgedAppServices.Contains(t.ServiceName)).ToList();
         if (!_boostWarningAcknowledged || unseenServices.Count > 0)
         {
-            var selectedMemory = closableTargets.Sum(p => p.WorkingSetBytes);
-            var warning = $"Mem-Booster will close {closableTargets.Count} selected running app group(s).{Environment.NewLine}{Environment.NewLine}" +
-                          $"Estimated selected working set: {FormatBytes(selectedMemory)}{Environment.NewLine}{Environment.NewLine}";
+            var selectedMemory = closableTargets.Sum(p => p.MemoryBytes);
+            var warning = closableTargets.Count > 0
+                ? $"Mem-Booster will close {closableTargets.Count} selected running app group(s).{Environment.NewLine}{Environment.NewLine}" +
+                  $"Memory in use by these apps: about {FormatBytes(selectedMemory)}{Environment.NewLine}{Environment.NewLine}"
+                : string.Empty;
 
             if (respawnSkipSet.Count > 0)
             {
-                warning += $"{respawnSkipSet.Count} selected app(s) marked Respawns will be left running, because Windows restarts them " +
-                           $"straight away.{Environment.NewLine}{Environment.NewLine}";
+                warning += $"{respawnSkipSet.Count} selected app(s) marked Respawns will be trimmed instead of closed: Windows restarts them " +
+                           $"straight away, so their memory is paged out and the apps keep running.{Environment.NewLine}{Environment.NewLine}";
             }
 
             if (appServices.Count > 0)
@@ -1101,7 +1219,18 @@ public sealed partial class MainWindow : Window
         try
         {
             ShowProgress("Preparing boost...", 10);
-            var availableBefore = _memoryService.GetMemoryInfo().AvailableBytes;
+            var availableNow = _memoryService.GetMemoryInfo().AvailableBytes;
+            if (_boostChainBaseline > 0 && DateTime.UtcNow - _lastBoostFinishedUtc < BoostChainWindow)
+            {
+                _boostChainCount++; // Follow-up boost: keep measuring from before the first one.
+            }
+            else
+            {
+                _boostChainBaseline = availableNow;
+                _boostChainCount = 1;
+            }
+
+            var availableBefore = _boostChainBaseline;
 
             // Freeze the selection: the background work must never enumerate the live
             // HashSet while the UI thread could still change it.
@@ -1149,24 +1278,50 @@ public sealed partial class MainWindow : Window
                 ? Task.Run(() => _processService.KillProcessTreesByExecutableNames(passATargets, options, line => traceLines.Add($"WinUI boost: {line}")))
                 : Task.FromResult(BoostResult.Empty);
 
-            await Task.WhenAll(serviceTask, killTask);
+            // Respawning apps: page their memory out instead of closing them.
+            var trimTargets = respawnSkipSet.ToArray();
+            var trimTask = trimTargets.Length > 0
+                ? Task.Run(() => _processService.TrimWorkingSets(trimTargets, line => traceLines.Add($"WinUI boost (trim): {line}")))
+                : Task.FromResult(TrimResult.Empty);
+
+            await Task.WhenAll(serviceTask, killTask, trimTask);
             var serviceResult = serviceTask.Result;
             var result = killTask.Result;
+            var trimResult = trimTask.Result;
+
+            // Services still shutting down cleanly when the wait ended (e.g. Windows Search
+            // flushing its index). Their processes are left to finish on their own.
+            var stillStoppingNames = new HashSet<string>(
+                serviceResult?.StillStoppingServiceNames ?? (IReadOnlyList<string>)Array.Empty<string>(),
+                StringComparer.OrdinalIgnoreCase);
+            var stillStoppingExes = new HashSet<string>(
+                appServices.Where(t => stillStoppingNames.Contains(t.ServiceName)).Select(t => t.ExeName),
+                StringComparer.OrdinalIgnoreCase);
 
             if (serviceResult is not null)
             {
+                // A still-stopping service's exe may be running at the re-check for a few
+                // more seconds; leave it out so it isn't mistaken for a respawner.
                 var stoppedNames = new HashSet<string>(serviceResult.StoppedServiceNames, StringComparer.OrdinalIgnoreCase);
-                serviceClosedExes.AddRange(appServices.Where(t => stoppedNames.Contains(t.ServiceName)).Select(t => t.ExeName));
+                serviceClosedExes.AddRange(appServices
+                    .Where(t => stoppedNames.Contains(t.ServiceName) && !stillStoppingNames.Contains(t.ServiceName))
+                    .Select(t => t.ExeName));
                 RestoreServicesButton.IsEnabled = _serviceControlService.HasStoppedServices();
             }
 
             // Pass B: now that services are done, close anything still running under a
             // service exe name — a same-name tray app (e.g. Everything.exe) or a service
-            // that refused to stop. Same outcome as before the passes were split.
-            if (serviceExeSet.Count > 0)
+            // that refused to stop. A service that is still stopping is not killed: that
+            // risks its data and can make Windows restart it.
+            var passBTargets = serviceExeSet.Where(exe => !stillStoppingExes.Contains(exe)).ToArray();
+            foreach (var exe in stillStoppingExes)
+            {
+                traceLines.Add($"WinUI boost (pass B): left {exe} alone while its service finishes stopping");
+            }
+
+            if (passBTargets.Length > 0)
             {
                 ShowProgress("Closing remaining app processes...", 65);
-                var passBTargets = serviceExeSet.ToArray();
                 var passB = await Task.Run(() => _processService.KillProcessTreesByExecutableNames(
                     passBTargets, options, line => traceLines.Add($"WinUI boost (pass B): {line}")));
                 result = BoostResult.Combine(result, passB);
@@ -1196,9 +1351,11 @@ public sealed partial class MainWindow : Window
             var serviceNote = serviceResult is { Stopped: > 0 }
                 ? $" Stopped {serviceResult.Stopped} app service(s); use Restore Services to bring them back."
                 : string.Empty;
-            var respawnNote = respawnSkipSet.Count > 0
-                ? $" Left {respawnSkipSet.Count} respawning app(s) alone."
-                : string.Empty;
+            var respawnNote = trimResult.Trimmed > 0
+                ? $" Trimmed {trimTargets.Length} respawning app(s) instead of closing them (\u2248 {FormatBytes(trimResult.BytesTrimmed)} paged out)."
+                : respawnSkipSet.Count > 0
+                    ? $" Left {respawnSkipSet.Count} respawning app(s) running (couldn't trim them)."
+                    : string.Empty;
             StatusTextBlock.Text = $"Boost complete:{FreedSuffix(availableBefore, memoryAfter)} {result.Summary}.{serviceNote}{respawnNote} Re-checking in a few seconds...";
             ElapsedTextBlock.Text = $"{_operationWatch.Elapsed.TotalSeconds:0.0}s";
 
@@ -1379,6 +1536,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            _nativeDialogOpen = true;
             var path = NativeFileDialogService.ShowOpenXmlProfileDialog(WindowNative.GetWindowHandle(this));
             return Task.FromResult(path);
         }
@@ -1387,12 +1545,18 @@ public sealed partial class MainWindow : Window
             _loggerService.Write($"Explorer profile open dialog failed: {ex}");
             throw new InvalidOperationException("The Explorer file picker could not open. " + ToUserError(ex), ex);
         }
+        finally
+        {
+            _nativeDialogOpen = false;
+            NoteInteraction();
+        }
     }
 
     private Task<string?> PickSaveProfilePathAsync()
     {
         try
         {
+            _nativeDialogOpen = true;
             var path = NativeFileDialogService.ShowSaveXmlProfileDialog(WindowNative.GetWindowHandle(this));
             return Task.FromResult(path);
         }
@@ -1400,6 +1564,11 @@ public sealed partial class MainWindow : Window
         {
             _loggerService.Write($"Explorer profile save dialog failed: {ex}");
             throw new InvalidOperationException("The Explorer file picker could not open. " + ToUserError(ex), ex);
+        }
+        finally
+        {
+            _nativeDialogOpen = false;
+            NoteInteraction();
         }
     }
 
@@ -1537,39 +1706,98 @@ public sealed partial class MainWindow : Window
         await CheckUpdatesAsync(silent: false);
     }
 
+    // Mem-Booster is opened for a minute at a time, often several times a day. Ask GitHub
+    // at most once a day and reuse the answer in between, so most launches never load the
+    // network and TLS stack at all.
+    private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromHours(24);
+
+    private async Task CheckUpdatesOnStartupAsync()
+    {
+        try
+        {
+            var settings = _profileService.LoadSettings();
+            var now = DateTime.UtcNow;
+            if (settings.LastUpdateCheckUtc is { } last && last <= now && now - last < UpdateCheckInterval)
+            {
+                ShowUpdateButtonState(settings.LatestReleaseVersion);
+                return;
+            }
+
+            await Task.Delay(1500);
+            if (!_isClosing)
+            {
+                await CheckUpdatesAsync(silent: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _loggerService.Write($"WinUI startup update check failed: {ex.Message}");
+        }
+    }
+
+    private void ShowUpdateButtonState(string? latestVersion)
+    {
+        UpdateButton.Content = UpdateService.IsNewer(latestVersion, CurrentVersion)
+            ? $"Update v{latestVersion}"
+            : "Up to date";
+    }
+
     private async Task CheckUpdatesAsync(bool silent)
     {
         try
         {
             var result = await _updateService.CheckLatestAsync(CurrentVersion);
+            if (_isClosing)
+            {
+                return;
+            }
+
+            _profileService.SaveSettings(_profileService.LoadSettings() with
+            {
+                LastUpdateCheckUtc = DateTime.UtcNow,
+                LatestReleaseVersion = result.LatestVersion,
+                LatestReleaseUrl = result.ReleaseUrl
+            });
+
+            ShowUpdateButtonState(result.LatestVersion);
+            _loggerService.Write($"Update check: running v{CurrentVersion}; latest GitHub release={(string.IsNullOrWhiteSpace(result.LatestVersion) ? "none" : "v" + result.LatestVersion)}");
+
+            if (silent)
+            {
+                return;
+            }
 
             if (result.IsUpdateAvailable)
             {
-                UpdateButton.Content = $"Update {result.LatestVersion}";
-                if (!silent)
+                var open = await ShowConfirmAsync(
+                    "Update available",
+                    $"v{result.LatestVersion} is available. You're running v{CurrentVersion}.",
+                    "Open GitHub",
+                    "Close");
+                if (open)
                 {
-                    var open = await ShowConfirmAsync("Update available", $"Latest release: {result.LatestVersion}", "Open GitHub", "Close");
-                    if (open)
-                    {
-                        await Launcher.LaunchUriAsync(new Uri(result.ReleaseUrl));
-                    }
+                    await Launcher.LaunchUriAsync(new Uri(result.ReleaseUrl));
                 }
             }
             else
             {
-                UpdateButton.Content = "Up to date";
-                if (!silent)
-                {
-                    await ShowMessageAsync("Updates", string.IsNullOrWhiteSpace(result.LatestVersion)
-                        ? "No GitHub release was found yet."
-                        : $"Latest GitHub release: {result.LatestVersion}");
-                }
+                var message = string.IsNullOrWhiteSpace(result.LatestVersion)
+                    ? $"No GitHub release was found yet. You're running v{CurrentVersion}."
+                    : UpdateService.Compare(result.LatestVersion, CurrentVersion) < 0
+                        ? $"You're running v{CurrentVersion}, which is newer than the latest GitHub release (v{result.LatestVersion})."
+                        : $"You're on the latest version (v{CurrentVersion}).";
+                await ShowMessageAsync("Updates", message);
             }
         }
         catch (Exception ex)
         {
+            _loggerService.Write($"WinUI update check failed: {ex.Message}");
+            if (_isClosing)
+            {
+                return;
+            }
+
             UpdateButton.Content = "Update check failed";
-            _loggerService.Write($"WinUI update check failed: {ex}");
             if (!silent)
             {
                 await ShowMessageAsync("Update check failed", ex.Message);
@@ -1842,7 +2070,7 @@ public sealed partial class MainWindow : Window
             XamlRoot = RootGrid.XamlRoot
         };
 
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary)
         {
             return null;
         }
@@ -1895,7 +2123,7 @@ public sealed partial class MainWindow : Window
             XamlRoot = RootGrid.XamlRoot
         };
 
-        var result = await dialog.ShowAsync();
+        var result = await ShowDialogAsync(dialog);
         if (result != ContentDialogResult.Primary)
         {
             return null;
@@ -1945,7 +2173,7 @@ public sealed partial class MainWindow : Window
 
         _loggerService.Write($"WinUI timed warning shown: title={title}; delaySeconds={seconds}");
         timer.Start();
-        var result = await dialog.ShowAsync();
+        var result = await ShowDialogAsync(dialog);
         timer.Stop();
         _loggerService.Write($"WinUI timed warning result: title={title}; accepted={result == ContentDialogResult.Primary}");
         return result == ContentDialogResult.Primary;
@@ -1962,7 +2190,7 @@ public sealed partial class MainWindow : Window
             XamlRoot = RootGrid.XamlRoot
         };
 
-        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        return await ShowDialogAsync(dialog) == ContentDialogResult.Primary;
     }
 
     private async Task ShowMessageAsync(string title, string message)
@@ -1975,7 +2203,7 @@ public sealed partial class MainWindow : Window
             XamlRoot = RootGrid.XamlRoot
         };
 
-        await dialog.ShowAsync();
+        await ShowDialogAsync(dialog);
     }
 
     private void ShowProgress(string message, double value)

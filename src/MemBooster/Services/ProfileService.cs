@@ -20,36 +20,74 @@ public sealed class ProfileService
     public string LastRestoreSessionPath => Path.Combine(AppDataDirectory, "last-restore-session.xml");
 
 
-    public string LoadThemePreference()
+    public string LoadThemePreference() => LoadSettings().Theme;
+
+    public void SaveThemePreference(string theme)
+    {
+        SaveSettings(LoadSettings() with { Theme = IsValidTheme(theme) ? theme : "Dark" });
+    }
+
+    public AppSettings LoadSettings()
     {
         if (!File.Exists(SettingsPath))
         {
-            return "Dark";
+            return AppSettings.Default;
         }
 
         try
         {
-            var document = XDocument.Load(SettingsPath, LoadOptions.None);
-            var theme = (string?)document.Root?.Attribute("theme") ?? "Dark";
-            return IsValidTheme(theme) ? theme : "Dark";
+            var root = XDocument.Load(SettingsPath, LoadOptions.None).Root;
+            var theme = (string?)root?.Attribute("theme") ?? "Dark";
+            DateTime? lastCheck = DateTime.TryParse(
+                (string?)root?.Attribute("lastUpdateCheckUtc"),
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+                out var parsed)
+                ? parsed
+                : null;
+
+            return new AppSettings(
+                IsValidTheme(theme) ? theme : "Dark",
+                lastCheck,
+                (string?)root?.Attribute("latestRelease"),
+                (string?)root?.Attribute("latestReleaseUrl"));
         }
         catch
         {
-            return "Dark";
+            return AppSettings.Default;
         }
     }
 
-    public void SaveThemePreference(string theme)
+    public void SaveSettings(AppSettings settings)
     {
-        Directory.CreateDirectory(AppDataDirectory);
-        var safeTheme = IsValidTheme(theme) ? theme : "Dark";
-        var document = new XDocument(
-            new XDeclaration("1.0", "utf-8", "yes"),
-            new XElement("MemBoosterSettings",
+        try
+        {
+            Directory.CreateDirectory(AppDataDirectory);
+            var root = new XElement("MemBoosterSettings",
                 new XAttribute("version", AppInfo.Version),
-                new XAttribute("theme", safeTheme)));
+                new XAttribute("theme", IsValidTheme(settings.Theme) ? settings.Theme : "Dark"));
 
-        document.Save(SettingsPath);
+            if (settings.LastUpdateCheckUtc is { } lastCheck)
+            {
+                root.Add(new XAttribute("lastUpdateCheckUtc", lastCheck.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(settings.LatestReleaseVersion))
+            {
+                root.Add(new XAttribute("latestRelease", settings.LatestReleaseVersion));
+            }
+
+            if (!string.IsNullOrWhiteSpace(settings.LatestReleaseUrl))
+            {
+                root.Add(new XAttribute("latestReleaseUrl", settings.LatestReleaseUrl));
+            }
+
+            new XDocument(new XDeclaration("1.0", "utf-8", "yes"), root).Save(SettingsPath);
+        }
+        catch
+        {
+            // Settings are a convenience; never fail the app over them.
+        }
     }
 
     private static bool IsValidTheme(string theme)
@@ -139,3 +177,10 @@ public sealed class ProfileService
 }
 
 public sealed record ProfileData(string Name, IEnumerable<string> ExecutableNames);
+
+/// <param name="LastUpdateCheckUtc">When GitHub was last asked for the latest release.</param>
+/// <param name="LatestReleaseVersion">What it said, reused until the next check.</param>
+public sealed record AppSettings(string Theme, DateTime? LastUpdateCheckUtc, string? LatestReleaseVersion, string? LatestReleaseUrl)
+{
+    public static AppSettings Default { get; } = new("Dark", null, null, null);
+}

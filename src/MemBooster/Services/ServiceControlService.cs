@@ -23,6 +23,10 @@ namespace MemBooster.Services;
 public sealed class ServiceControlService
 {
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(10);
+
+    // During a boost, don't hold everything up for one slow service (Windows Search can
+    // take 10 s+ to flush its index). It keeps stopping on its own after this.
+    private static readonly TimeSpan AppServiceStopWait = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(15);
 
     private static readonly IReadOnlyList<ServiceCandidate> Catalog = new List<ServiceCandidate>
@@ -192,6 +196,7 @@ public sealed class ServiceControlService
             targets,
             refused,
             refused > 0 ? $"Refused {refused} service name(s) not on the allowlist." : null,
+            StopTimeout,
             trace);
     }
 
@@ -304,13 +309,15 @@ public sealed class ServiceControlService
             verified.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             refused,
             refused > 0 ? $"Refused {refused} app service(s) that changed since they were checked." : null,
+            AppServiceStopWait,
             trace);
     }
 
-    private ServiceStopResult StopCore(IReadOnlyList<string> targets, int refused, string? refusedMessage, Action<string>? trace)
+    private ServiceStopResult StopCore(IReadOnlyList<string> targets, int refused, string? refusedMessage, TimeSpan waitTimeout, Action<string>? trace)
     {
         var watch = Stopwatch.StartNew();
         var stopped = new ConcurrentBag<string>();
+        var stillStopping = new ConcurrentBag<string>();
         var messages = new ConcurrentQueue<string>();
         var alreadyStopped = 0;
         var skipped = refused;
@@ -330,6 +337,11 @@ public sealed class ServiceControlService
 
                 if (service.Status is ServiceControllerStatus.Stopped or ServiceControllerStatus.StopPending)
                 {
+                    if (service.Status == ServiceControllerStatus.StopPending)
+                    {
+                        stillStopping.Add(name);
+                    }
+
                     Interlocked.Increment(ref alreadyStopped);
                     return;
                 }
@@ -373,7 +385,7 @@ public sealed class ServiceControlService
 
                 try
                 {
-                    service.WaitForStatus(ServiceControllerStatus.Stopped, StopTimeout);
+                    service.WaitForStatus(ServiceControllerStatus.Stopped, waitTimeout);
                     stopped.Add(name);
                     trace?.Invoke($"Service stopped: {name}");
                 }
@@ -382,9 +394,11 @@ public sealed class ServiceControlService
                     service.Refresh();
                     if (service.Status == ServiceControllerStatus.StopPending)
                     {
-                        // Still winding down; it will stop, so it must be restorable.
+                        // Still winding down; it will stop, so it must be restorable. Callers
+                        // must leave its process alone until it finishes.
                         stopped.Add(name);
-                        messages.Enqueue($"{name} is still stopping (slow shutdown).");
+                        stillStopping.Add(name);
+                        messages.Enqueue($"{name} is still stopping (slow shutdown); it will finish on its own.");
                     }
                     else
                     {
@@ -419,7 +433,10 @@ public sealed class ServiceControlService
 
         watch.Stop();
         trace?.Invoke($"Service stop complete stopped={stoppedList.Count}; alreadyStopped={alreadyStopped}; skipped={skipped}; failed={failed}; elapsedMs={watch.ElapsedMilliseconds}");
-        return new ServiceStopResult(stoppedList.Count, alreadyStopped, skipped, failed, stoppedList, messages.ToList());
+        return new ServiceStopResult(stoppedList.Count, alreadyStopped, skipped, failed, stoppedList, messages.ToList())
+        {
+            StillStoppingServiceNames = stillStopping.Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+        };
     }
 
     public ServiceRestoreResult RestoreServices(Action<string>? trace = null)
@@ -721,6 +738,9 @@ public sealed record AppServiceTarget(string ServiceName, string DisplayName, st
 
 public sealed record ServiceStopResult(int Stopped, int AlreadyStopped, int Skipped, int Failed, IReadOnlyList<string> StoppedServiceNames, IReadOnlyList<string> Messages)
 {
+    /// <summary>Services still shutting down when the wait ended. Their processes must not be killed.</summary>
+    public IReadOnlyList<string> StillStoppingServiceNames { get; init; } = Array.Empty<string>();
+
     public string Summary => $"Services stopped: {Stopped}, already stopped: {AlreadyStopped}, skipped: {Skipped}, failed: {Failed}";
 }
 

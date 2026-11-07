@@ -45,6 +45,14 @@ public static class SafetyRules
         "rundll32.exe",
         "securityhealthservice.exe",
         "securityhealthsystray.exe",
+
+        // Microsoft Defender. SmartScreen checks apps and downloads as they open and
+        // Windows relaunches it on demand (e.g. when your game starts), so closing it
+        // only weakens protection for a few MB.
+        "smartscreen.exe",
+        "msmpeng.exe",
+        "nissrv.exe",
+        "mpdefendercoreservice.exe",
         "memory compression",
         "secure system",
         "system idle process",
